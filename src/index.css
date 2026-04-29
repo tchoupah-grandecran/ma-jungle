@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  /* Tes couleurs */
+  --color-jungle-green: #1B3022;
+  --color-jungle-sage: #8A9A5B;
+  --color-jungle-cream: #F9F7F2;
+  --color-jungle-terracotta: #BF6B4E;
+  
+  /* Tes polices */
+  --font-sans: "DM Sans", sans-serif;
+  --font-rounded: "RoundyRainbows", sans-serif;
+}
+
+@font-face {
+  font-family: 'RoundyRainbows';
+  src: url('/roundyrainbows.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Force le style de base comme tu l'avais au début */
+body {
+  background-color: var(--color-jungle-cream);
+  color: var(--color-jungle-green);
+  font-family: var(--font-sans);
+}
+
+h1, .font-rounded {
+  font-family: 'RoundyRainbows', sans-serif !important;
+}

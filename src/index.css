@@ -30,3 +30,14 @@ body {
 h1, .font-rounded {
   font-family: 'RoundyRainbows', sans-serif !important;
 }
+
+@layer base {
+  /* Force l'affichage SDR pour toutes les images de l'application */
+  img {
+    dynamic-range-limit: standard;
+    
+    /* Hack de secours pour les navigateurs un poil plus anciens (Safari iOS 16/17) */
+    -webkit-filter: brightness(1.0);
+    filter: brightness(1.0);
+  }
+}

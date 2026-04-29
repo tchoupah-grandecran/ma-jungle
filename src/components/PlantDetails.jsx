@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { db } from '../services/firebase';
-import { doc, updateDoc, arrayUnion, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { NOTE_TYPES, ROOMS } from '../utils/constants';
-import { ChevronLeft, Calendar, Plus, MapPin, Droplets } from 'lucide-react';
+import { ChevronLeft, Calendar, Plus, MapPin, Droplets, Trash2, Quote } from 'lucide-react';
 
-export default function PlantDetails({ plant, onClose }) {
+export default function PlantDetails({ plant, onClose, onDelete }) {
   const [note, setNote] = useState('');
   const [noteType, setNoteType] = useState('growth');
   const [history, setHistory] = useState(plant.history || []);
@@ -26,19 +26,50 @@ export default function PlantDetails({ plant, onClose }) {
     setNote('');
   };
 
+  const handleDelete = async () => {
+    if (window.confirm("Es-tu sûr de vouloir supprimer cette plante ?")) {
+      try {
+        await deleteDoc(doc(db, "plants", plant.id));
+        onClose();
+      } catch (error) {
+        console.error("Erreur suppression:", error);
+      }
+    }
+  };
+
   const roomInfo = ROOMS.find(r => r.id === plant.room);
   const RoomIcon = roomInfo?.icon || MapPin;
 
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300">
-      <div className="p-6 flex items-center gap-4 border-b border-gray-100">
-        <button onClick={onClose} className="p-2 bg-gray-50 rounded-full text-jungle-green">
-          <ChevronLeft size={24} />
+      {/* Header */}
+      <div className="p-6 flex items-center justify-between border-b border-gray-100">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="p-2 bg-gray-50 rounded-full text-jungle-green">
+            <ChevronLeft size={24} />
+          </button>
+          <div>
+            <h2 className="text-xl font-rounded font-black text-jungle-green capitalize leading-tight">
+              {plant.name}
+            </h2>
+            {plant.variety && (
+              <p className="font-sans text-xs text-jungle-sage font-medium italic">
+                {plant.variety}
+              </p>
+            )}
+          </div>
+        </div>
+        
+        <button 
+          onClick={handleDelete}
+          className="p-2.5 bg-red-50 text-red-500 rounded-full hover:bg-red-100 transition-colors"
+        >
+          <Trash2 size={20} />
         </button>
-        <h2 className="text-xl font-rounded font-black text-jungle-green capitalize">{plant.name}</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {/* Photo & Badges */}
         <div className="h-72 w-full relative">
           <img src={plant.imageUrl} className="w-full h-full object-cover shadow-inner" alt="" />
           <div className="absolute bottom-6 left-6 flex gap-2">
@@ -52,6 +83,19 @@ export default function PlantDetails({ plant, onClose }) {
         </div>
 
         <div className="p-8 space-y-10">
+          
+          {/* NOUVEAU : Bloc Description / Note de cœur */}
+          {plant.description && (
+            <section className="bg-jungle-cream/30 p-6 rounded-[2rem] border border-jungle-cream/50 relative">
+              <Quote size={20} className="text-jungle-sage/20 absolute top-4 right-6" />
+              <h3 className="text-[11px] font-black text-jungle-sage uppercase tracking-[0.2em] mb-2">Note de cœur</h3>
+              <p className="text-sm text-jungle-green font-medium leading-relaxed italic">
+                "{plant.description}"
+              </p>
+            </section>
+          )}
+
+          {/* Historique Arrosage */}
           <section>
             <h3 className="text-[11px] font-black text-jungle-green/40 uppercase tracking-[0.2em] mb-5">Derniers arrosages</h3>
             <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
@@ -60,13 +104,13 @@ export default function PlantDetails({ plant, onClose }) {
                   <p className="text-[10px] font-black text-jungle-sage uppercase mb-2">
                     {format(new Date(date), 'EEE d MMM', { locale: fr })}
                   </p>
-                  {/* Gouttes Terracotta ici */}
                   <Droplets size={20} className="mx-auto text-jungle-terracotta" />
                 </div>
               )) : <p className="text-sm text-gray-400 italic">Aucun historique...</p>}
             </div>
           </section>
 
+          {/* Journal de bord */}
           <section className="pb-20">
             <h3 className="text-[11px] font-black text-jungle-green/40 uppercase tracking-[0.2em] mb-5">Journal de bord</h3>
             <form onSubmit={addNote} className="bg-gray-50 p-5 rounded-[2rem] mb-8 border border-gray-100 shadow-inner">
@@ -82,7 +126,6 @@ export default function PlantDetails({ plant, onClose }) {
               </div>
               <div className="flex gap-3 items-center">
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ajouter une note..." className="flex-1 bg-transparent border-none outline-none text-sm font-medium" />
-                {/* Bouton Plus Terracotta ici */}
                 <button type="submit" className="bg-jungle-terracotta text-white p-2.5 rounded-xl shadow-lg active:scale-90 transition-transform">
                   <Plus size={18} />
                 </button>

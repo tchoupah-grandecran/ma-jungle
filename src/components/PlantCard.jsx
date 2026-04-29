@@ -71,13 +71,20 @@ export default function PlantCard({ plant, onWater, onEdit }) {
         <div className="flex items-center gap-2 mb-1">
            <span className="flex items-center gap-1 text-[10px] font-bold text-jungle-sage uppercase tracking-widest"><RoomIcon size={12}/> {roomInfo.label}</span>
            <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-      <MapPin size={12} /> {plant.spot || 'Non précisé'}
-    </span>
+            <MapPin size={12} /> {plant.spot || 'Non précisé'}
+          </span>
         </div>
 
-        <h3 className="font-rounded font-bold text-2xl text-jungle-green capitalize leading-tight">{plant.name}</h3>
+        {/* Nom de la plante */}
+        <h3 className="font-rounded font-bold text-2xl text-jungle-green capitalize leading-tight">
+          {plant.name}
+        </h3>
+        
+        {/* Affichage de la variété juste sous le nom */}
         {plant.variety && (
-          <p className="font-sans text-sm text-jungle-sage/70 font-medium italic mb-3">{plant.variety}</p>
+          <p className="font-sans text-sm text-jungle-sage/70 font-medium italic mt-0.5 mb-3">
+            {plant.variety}
+          </p>
         )}
 
         <div className="flex items-center gap-2 text-gray-400 text-[10px] mb-4 bg-gray-50 w-fit px-3 py-1.5 rounded-full uppercase font-bold tracking-wider">

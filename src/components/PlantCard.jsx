@@ -1,7 +1,7 @@
-import { differenceInDays, addDays, format, isToday, isTomorrow } from 'date-fns';
+import { differenceInDays, addDays, format, isToday, isAfter, startOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ROOMS } from '../utils/constants';
-import { Edit2, Droplets, MapPin, Calendar, Bath, ShowerHead } from 'lucide-react';
+import { Edit2, Droplets, MapPin, CalendarClock, Bath, ShowerHead, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 
 export default function PlantCard({ plant, onWater, onEdit }) {
@@ -9,115 +9,135 @@ export default function PlantCard({ plant, onWater, onEdit }) {
   
   const lastWaterDate = new Date(plant.lastWatering);
   const nextWaterDate = addDays(lastWaterDate, plant.frequency);
-  const now = new Date();
+  const today = startOfDay(new Date());
   
-  const daysLeft = differenceInDays(nextWaterDate, now);
+  const daysDiff = differenceInDays(nextWaterDate, today);
   const alreadyWateredToday = isToday(lastWaterDate);
+  
+  // États de l'arrosage
   const isDueToday = isToday(nextWaterDate) && !alreadyWateredToday;
-  const isDueTomorrow = isTomorrow(nextWaterDate);
-  const isOverdue = nextWaterDate < now && !alreadyWateredToday;
+  const isOverdue = isAfter(today, nextWaterDate) && !alreadyWateredToday;
+  const daysOverdue = isOverdue ? Math.abs(daysDiff) : 0;
 
   const handleWaterClick = async (e) => {
     e.stopPropagation();
     setIsWatering(true);
     await onWater(plant.id);
-    setTimeout(() => setIsWatering(false), 600);
+    setTimeout(() => setIsWatering(false), 800);
   };
 
   const roomInfo = ROOMS.find(r => r.id === plant.room) || ROOMS[0];
   const RoomIcon = roomInfo.icon;
 
-  // Détermination du message et de la couleur du status
-  let statusText = `Dans ${daysLeft} jours`;
+  // Texte de status dynamique (On gronde !)
+  let statusText = `J-${daysDiff}`;
   let statusColor = "text-jungle-green";
-
+  
   if (alreadyWateredToday) {
-    statusText = "Fraichement hydratée";
+    statusText = "OK";
     statusColor = "text-jungle-sage";
-  } else if (isOverdue || isDueToday) {
-    statusText = "À arroser aujourd'hui";
-    statusColor = "text-jungle-terracotta";
-  } else if (isDueTomorrow) {
-    statusText = "À arroser demain";
+  } else if (isOverdue) {
+    statusText = `+${daysOverdue}J RETARD !`;
+    statusColor = "text-red-600 animate-pulse";
+  } else if (isDueToday) {
+    statusText = "SOIF";
     statusColor = "text-jungle-terracotta";
   }
 
   return (
-    <div className="bg-white rounded-[2.5rem] p-4 shadow-sm hover:shadow-xl transition-all group relative">
-      <div className="relative h-64 w-full overflow-hidden rounded-[2rem]">
-        <img src={plant.imageUrl} className="w-full h-full object-cover" alt={plant.name} />
+    <div className={`bg-white rounded-[3rem] shadow-sm hover:shadow-2xl transition-all duration-500 group overflow-hidden border flex flex-col h-[520px] ${isOverdue ? 'border-red-200 shadow-red-100 shadow-lg' : 'border-gray-50'}`}>
+      
+      {/* SECTION IMAGE */}
+      <div className="relative flex-grow overflow-hidden">
+        <img 
+          src={plant.imageUrl} 
+          className={`w-full h-full object-cover transition-all duration-1000 group-hover:scale-110 ${isOverdue ? 'grayscale-[0.7] contrast-[0.9]' : ''}`} 
+          alt={plant.name} 
+        />
         
-        {(isOverdue || isDueToday) && (
-          <div className="absolute top-4 left-4 bg-jungle-terracotta text-white text-[10px] font-bold px-3 py-1.5 rounded-xl animate-bounce flex items-center gap-1">
-            <Droplets size={10} fill="white" /> SOIF
+        {/* Overlay Dégradé */}
+        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
+
+        {/* Message de "Gronde" si retard */}
+        {isOverdue && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-20 pointer-events-none">
+            <div className="bg-red-600 text-white p-4 rounded-full shadow-2xl animate-bounce">
+              <AlertCircle size={32} strokeWidth={3} />
+            </div>
+            <span className="bg-red-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Oubliée !</span>
           </div>
         )}
-        
-        <button onClick={(e) => { e.stopPropagation(); onEdit(plant); }} className="absolute top-4 right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-sm text-jungle-green">
-          <Edit2 size={16} />
-        </button>
 
-        <div className="absolute bottom-4 left-4 bg-black/20 backdrop-blur-md px-3 py-2 rounded-xl flex items-center gap-2 text-white border border-white/20">
-          {plant.waterType === 'bain' ? <Bath size={14} /> : <ShowerHead size={14} />}
-          <div className="flex gap-0.5">
+        {/* BESOINS EN EAU */}
+        <div className="absolute top-6 left-6 bg-white/90 backdrop-blur-md py-2 px-3 rounded-2xl flex items-center gap-2.5 shadow-sm">
+          <div className="text-jungle-green">
+            {plant.waterType === 'bain' ? <Bath size={14} /> : <ShowerHead size={14} />}
+          </div>
+          <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map(n => (
-              <Droplets key={n} size={8} fill={n <= (plant.waterAmount || 3) ? "white" : "none"} stroke="white" strokeWidth={2} />
+              <div key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (plant.waterAmount || 3) ? (isOverdue ? 'bg-red-500' : 'bg-jungle-terracotta') : 'bg-jungle-cream'}`} />
             ))}
           </div>
         </div>
+
+        {/* BOUTON MODIFIER */}
+        <button 
+          onClick={(e) => { e.stopPropagation(); onEdit(plant); }} 
+          className="absolute top-6 right-6 bg-jungle-green text-white p-3 rounded-full shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-110"
+        >
+          <Edit2 size={16} />
+        </button>
+
+        {/* NOM */}
+        <div className="absolute bottom-7 left-8 right-8">
+          <h3 className="font-rounded font-black text-4xl text-white capitalize leading-tight drop-shadow-md">
+            {plant.name}
+          </h3>
+        </div>
       </div>
       
-      <div className="mt-4 px-2 text-left">
-        <div className="flex items-center gap-2 mb-1">
-           <span className="flex items-center gap-1 text-[10px] font-bold text-jungle-sage uppercase tracking-widest"><RoomIcon size={12}/> {roomInfo.label}</span>
-           <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            <MapPin size={12} /> {plant.spot || 'Non précisé'}
-          </span>
-        </div>
-
-        {/* Nom de la plante */}
-        <h3 className="font-rounded font-bold text-2xl text-jungle-green capitalize leading-tight">
-          {plant.name}
-        </h3>
-        
-        {/* Affichage de la variété juste sous le nom */}
-        {plant.variety && (
-          <p className="font-sans text-sm text-jungle-sage/70 font-medium italic mt-0.5 mb-3">
-            {plant.variety}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 text-gray-400 text-[10px] mb-4 bg-gray-50 w-fit px-3 py-1.5 rounded-full uppercase font-bold tracking-wider">
-          <Calendar size={12} />
-          Dernier : {format(lastWaterDate, "d MMMM", { locale: fr })}
-        </div>
-
-        <div className="flex items-center justify-between bg-jungle-cream/50 p-4 rounded-[1.8rem] border border-white">
-          <div className="text-left">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Status</p>
-            <p className={`text-sm font-bold ${statusColor}`}>
-              {statusText}
-            </p>
-            {alreadyWateredToday && (
-              <p className="text-[9px] text-gray-400 mt-0.5 font-medium">
-                Prochain : {format(nextWaterDate, "d MMMM", { locale: fr })}
+      {/* SECTION INFOS */}
+      <div className={`p-8 transition-colors duration-500 ${isOverdue ? 'bg-red-50' : 'bg-white'}`}>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-2.5 min-w-0">
+            {plant.variety && (
+              <p className="text-jungle-green font-bold text-sm italic opacity-80 leading-tight truncate">
+                {plant.variety}
               </p>
             )}
+
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-[10px] font-black text-jungle-sage uppercase tracking-widest">
+                <RoomIcon size={12}/> {roomInfo.label}
+              </span>
+              <span className="w-1 h-1 rounded-full bg-gray-200 shrink-0" />
+              <span className="flex items-center gap-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest truncate">
+                <MapPin size={12} /> {plant.spot}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-jungle-green/30 text-[9px] font-bold uppercase tracking-widest">
+              <CalendarClock size={12} />
+              <span>Dernier : {format(lastWaterDate, "d MMM", { locale: fr })}</span>
+            </div>
           </div>
-          
+
+          {/* BOUTON ARROSAGE - Devient Rouge et pulse en cas de retard */}
           <button 
             onClick={handleWaterClick}
-            disabled={isWatering}
-            className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-all relative overflow-hidden ${
-              isWatering ? 'scale-90 bg-blue-500' : (isOverdue || isDueToday) ? 'bg-jungle-terracotta shadow-lg' : 'bg-white shadow-sm'
+            disabled={isWatering || alreadyWateredToday}
+            className={`h-16 w-16 shrink-0 rounded-[1.8rem] flex items-center justify-center transition-all duration-300 ${
+              isWatering ? 'bg-blue-500 scale-90' : 
+              alreadyWateredToday ? 'bg-jungle-cream/50 text-jungle-sage/40' :
+              isOverdue ? 'bg-red-600 text-white shadow-lg animate-pulse scale-110' :
+              (isDueToday) ? 'bg-jungle-terracotta text-white shadow-lg' : 
+              'bg-jungle-cream text-jungle-green hover:bg-jungle-green hover:text-white'
             }`}
           >
-            <Droplets 
-              size={24} 
-              className={`${isWatering ? 'animate-bounce text-white' : (isOverdue || isDueToday) ? 'text-white' : 'text-jungle-sage'}`} 
-              fill="currentColor" 
-              fillOpacity={0.3} 
-            />
+            <div className="flex flex-col items-center">
+              <Droplets size={22} fill="currentColor" fillOpacity={0.3} className={isWatering ? 'animate-bounce' : ''} />
+              <span className="text-[9px] font-black mt-0.5 tracking-tighter uppercase">{statusText}</span>
+            </div>
           </button>
         </div>
       </div>

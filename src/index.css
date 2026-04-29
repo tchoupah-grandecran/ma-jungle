@@ -2,7 +2,7 @@
 
 @theme {
   /* Tes couleurs */
-  --color-jungle-green: #1B3022;
+  --color-jungle-green: #323D36;
   --color-jungle-sage: #8A9A5B;
   --color-jungle-cream: #F9F7F2;
   --color-jungle-terracotta: #BF6B4E;
@@ -40,4 +40,31 @@ h1, .font-rounded {
     -webkit-filter: brightness(1.0);
     filter: brightness(1.0);
   }
+}
+
+@keyframes draw-sprout {
+  0% {
+    stroke-dasharray: 0 100;
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  50% {
+    stroke-dasharray: 100 0;
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dasharray: 100 0;
+    opacity: 0;
+  }
+}
+
+.animate-draw {
+  /* On cible le tracé de l'icône SVG */
+  stroke-dasharray: 100;
+  animation: draw-sprout 4s ease-in-out infinite;
 }

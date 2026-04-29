@@ -3,20 +3,21 @@ import { db, storage, auth } from '../services/firebase';
 import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ROOMS, SPOTS } from '../utils/constants';
-import { X, Camera, Loader2, Sprout, MapPin, Home, Droplets, Bath, ShowerHead, CalendarClock, Quote } from 'lucide-react';
+import { X, Camera, Loader2, Sprout, MapPin, Home, Droplets, Bath, ShowerHead, CalendarClock, Quote, Calendar } from 'lucide-react';
 
 export default function AddPlant({ onSave, onCancel, editPlant }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     variety: '',
-    description: '', // Nouveau champ pour le petit commentaire
+    description: '',
     room: 'salon',
     spot: 'Sol',
     frequency: 7,
     waterType: 'douche',
     waterAmount: 3,
-    imageUrl: ''
+    imageUrl: '',
+    lastWatering: new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
   });
   const [imageFile, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -26,13 +27,15 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
       setFormData({
         name: editPlant.name,
         variety: editPlant.variety || '',
-        description: editPlant.description || '', // On récupère la description si elle existe
+        description: editPlant.description || '',
         room: editPlant.room,
         spot: editPlant.spot,
         frequency: editPlant.frequency,
         waterType: editPlant.waterType || 'douche',
         waterAmount: editPlant.waterAmount || 3,
-        imageUrl: editPlant.imageUrl
+        imageUrl: editPlant.imageUrl,
+        // On récupère la date existante en format YYYY-MM-DD pour l'input date
+        lastWatering: editPlant.lastWatering ? editPlant.lastWatering.split('T')[0] : new Date().toISOString().split('T')[0]
       });
       setPreviewUrl(editPlant.imageUrl);
     }
@@ -49,16 +52,21 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
         finalImageUrl = await getDownloadURL(snapshot.ref);
       }
 
+      // On s'assure que l'heure est fixée à midi pour éviter les décalages de fuseau horaire
+      const selectedDate = new Date(formData.lastWatering);
+      selectedDate.setHours(12, 0, 0);
+
       const plantData = {
         name: formData.name,
         variety: formData.variety,
-        description: formData.description, // On l'ajoute à l'envoi
+        description: formData.description,
         room: formData.room,
         spot: formData.spot,
         frequency: formData.frequency,
         waterType: formData.waterType,
         waterAmount: formData.waterAmount,
         imageUrl: finalImageUrl,
+        lastWatering: selectedDate.toISOString(),
         updatedAt: new Date().toISOString()
       };
 
@@ -68,8 +76,8 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
         await addDoc(collection(db, "plants"), {
           ...plantData,
           userId: auth.currentUser.uid,
-          lastWatering: new Date().toISOString(),
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          history: [selectedDate.toISOString()] // On initialise l'historique
         });
       }
       onSave();
@@ -116,7 +124,6 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
             </div>
           </div>
 
-          {/* Section Identité */}
           <div className="space-y-3">
             <input 
               placeholder="Nom de la plante..." 
@@ -131,10 +138,9 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
               onChange={e => setFormData({...formData, variety: e.target.value})}
               className="w-full p-4 rounded-2xl bg-white shadow-sm outline-none text-sm text-jungle-green placeholder:text-gray-300 italic"
             />
-            {/* Nouveau champ Commentaire / Description */}
             <div className="relative">
               <textarea 
-                placeholder="Un petit mot... (ex: Cadeau de maman, acheté à Nantes...)" 
+                placeholder="Un petit mot... (ex: Cadeau de maman...)" 
                 value={formData.description} 
                 onChange={e => setFormData({...formData, description: e.target.value})}
                 className="w-full p-4 pl-12 rounded-2xl bg-white shadow-sm outline-none text-xs text-jungle-green placeholder:text-gray-300 resize-none h-20 font-medium"
@@ -143,12 +149,29 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
             </div>
           </div>
 
+          {/* SÉLECTION DE LA DATE DU DERNIER ARROSAGE */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-jungle-cream p-2 rounded-xl text-jungle-terracotta">
+                <Calendar size={20} />
+              </div>
+              <span className="text-[10px] font-bold text-jungle-green uppercase tracking-widest">Dernier arrosage</span>
+            </div>
+            <input 
+              type="date"
+              value={formData.lastWatering}
+              onChange={e => setFormData({...formData, lastWatering: e.target.value})}
+              className="w-full p-4 rounded-xl bg-jungle-cream text-jungle-green font-bold outline-none border-none focus:ring-2 focus:ring-jungle-terracotta/20 transition-all"
+              required
+            />
+          </div>
+
           <div className="bg-white p-5 rounded-2xl shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-jungle-cream p-2 rounded-xl text-jungle-terracotta">
                 <CalendarClock size={20} />
               </div>
-              <span className="text-[10px] font-bold text-jungle-green uppercase tracking-widest">Arrosage tous les...</span>
+              <span className="text-[10px] font-bold text-jungle-green uppercase tracking-widest">Fréquence d'arrosage</span>
             </div>
             <div className="flex items-center gap-2">
               <input 

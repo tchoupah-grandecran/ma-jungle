@@ -8,7 +8,7 @@ export default {
     extend: {
       colors: {
         jungle: {
-          green: '#1B3022',
+          green: '#323D36',
           sage: '#8A9A5B',
           cream: '#F9F7F2',
           terracotta: '#BF6B4E',

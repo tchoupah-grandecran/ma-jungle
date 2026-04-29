@@ -68,3 +68,24 @@ h1, .font-rounded {
   stroke-dasharray: 100;
   animation: draw-sprout 4s ease-in-out infinite;
 }
+
+/* Masquer la scrollbar pour Chrome, Safari et Opera */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Masquer la scrollbar pour Firefox */
+* {
+  scrollbar-width: none;
+}
+
+/* Masquer la scrollbar pour IE et Edge */
+* {
+  -ms-overflow-style: none;
+}
+
+/* Optionnel : Assurer que le rebond iOS ne crée pas de zones blanches */
+html, body {
+  overscroll-behavior-y: none;
+  background-color: #F9F7F2; /* Ta couleur de fond */
+}

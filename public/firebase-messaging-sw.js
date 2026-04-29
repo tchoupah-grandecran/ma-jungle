@@ -12,14 +12,14 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Gère l'affichage quand l'app est en arrière-plan
-messaging.onBackgroundMessage((payload) => {
-  console.log('Message reçu en arrière-plan:', payload);
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/pwa-192x192.png' // Mets ici le chemin vers ton icône
-  };
+// RECOMMENDATION : On ne force pas showNotification ici si la 
+// notification envoyée par le serveur contient déjà un titre et un corps.
+// Firebase s'occupe de tout en arrière-plan.
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+messaging.onBackgroundMessage((payload) => {
+  console.log('[sw.js] Message reçu en arrière-plan :', payload);
+  
+  // On laisse vide ou on ajoute une logique LOGIQUE UNIQUEMENT.
+  // Ne pas appeler self.registration.showNotification() ici 
+  // sauf si tu envoies des messages "data-only" sans titre/corps.
 });

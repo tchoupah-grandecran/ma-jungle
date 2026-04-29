@@ -1,60 +1,112 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { setGlobalOptions } = require("firebase-functions/v2");
+const { getFirestore } = require("firebase-admin/firestore");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-// Définit la région (optionnel, mais conseillé pour éviter la Floride par défaut)
-setGlobalOptions({ region: "europe-west1" });
-
-exports.dailyWateringReminder = onSchedule("0 9 * * *", async (event) => {
-  const db = admin.firestore();
-  const now = new Date();
-  
-  console.log("Démarrage de la vérification quotidienne des plantes...");
+exports.dailyWateringReminder = onSchedule({
+  schedule: "0 9 * * *", 
+  timeZone: "Europe/Paris",
+  region: "europe-west1",
+}, async (event) => {
+  const db = getFirestore();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   try {
-    // 1. Récupérer tous les utilisateurs qui ont un Token
+    // 1. Récupérer tous les utilisateurs ayant un token
     const usersSnapshot = await db.collection("users").where("fcmToken", "!=", null).get();
-    
-    if (usersSnapshot.empty) {
-      console.log("Aucun utilisateur avec un token trouvé.");
-      return;
-    }
 
-    for (const userDoc of usersSnapshot.docs) {
-      const userData = userDoc.data();
-      const userId = userDoc.id;
+    // 2. FILTRE ANTI-DOUBLON : On utilise une Map pour ne garder qu'un token unique
+    // Clé : fcmToken, Valeur : familyId
+    const uniqueTokensMap = new Map();
+    
+    usersSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.fcmToken) {
+        uniqueTokensMap.set(data.fcmToken, data.familyId);
+      }
+    });
+
+    console.log(`Traitement de ${uniqueTokensMap.size} notifications uniques.`);
+
+    // 3. Boucler sur les tokens uniques
+    for (const [fcmToken, familyId] of uniqueTokensMap) {
       
-      // 2. Chercher les plantes de cet utilisateur
+      // Récupérer les plantes de la famille
       const plantsSnapshot = await db.collection("plants")
-        .where("userId", "==", userId)
+        .where("familyId", "==", familyId)
         .get();
-        
-      const thirstyPlants = plantsSnapshot.docs.filter(doc => {
-        const plant = doc.data();
-        const nextWaterDate = new Date(plant.lastWatering);
-        nextWaterDate.setDate(nextWaterDate.getDate() + (plant.frequency || 7));
-        return nextWaterDate <= now;
+
+      const plants = plantsSnapshot.docs.map(doc => doc.data());
+      
+      const latePlants = [];
+      const todayPlants = [];
+
+      plants.forEach(plant => {
+        const nextWatering = new Date(plant.lastWatering);
+        nextWatering.setDate(nextWatering.getDate() + plant.frequency);
+        nextWatering.setHours(0, 0, 0, 0);
+
+        if (nextWatering < today) {
+          latePlants.push(plant);
+        } else if (nextWatering.getTime() === today.getTime()) {
+          todayPlants.push(plant);
+        }
       });
 
-      // 3. Envoi de la notification
-      if (thirstyPlants.length > 0) {
+      // 4. Déterminer le message
+      let title = "Mission Arrosage 💧";
+      let body = "";
+
+      if (latePlants.length > 0) {
+        const messages = [
+          `Alerte sécheresse ! ${latePlants.length} amies sont en retard. Vite, aux arrosoirs ! 🚨`,
+          `J'en connais qui vont finir déshydratées... Arrose vite tes plantes en retard ! 🥀`,
+          `Oups ! Tu as oublié quelques amies... Il y a des urgences dans la jungle ! 🏃💨`
+        ];
+        body = messages[Math.floor(Math.random() * messages.length)];
+        title = "Urgence Jungle ! ⚠️";
+
+      } else if (todayPlants.length > 1) {
+        const randomPlant = todayPlants[Math.floor(Math.random() * todayPlants.length)];
+        const messages = [
+          `${randomPlant.name} et ses amies ont soif... C'est l'heure de la tournée générale ! 🍻`,
+          `Il y a du monde au balcon ! ${todayPlants.length} plantes attendent leur verre d'eau. 🌿`,
+          `La jungle s'impatiente... ${randomPlant.name} & co ont soif ! 💧`
+        ];
+        body = messages[Math.floor(Math.random() * messages.length)];
+
+      } else if (todayPlants.length === 1) {
+        const p = todayPlants[0];
+        const roomName = p.room ? ` dans le ${p.room.toLowerCase()}` : "";
+        const messages = [
+          `${p.name} a soif ! Un petit verre d'eau et elle sera ravie. ✨`,
+          `C'est le jour d'${p.name}${roomName} ! 🌱 Pense à l'hydrater.`,
+          `Toc toc ! ${p.name} réclame un peu d'attention (et d'eau) ! 💦`
+        ];
+        body = messages[Math.floor(Math.random() * messages.length)];
+      }
+
+      // 5. Envoi définitif
+      if (body) {
         const message = {
           notification: {
-            title: "🌿 Mission Arrosage !",
-            body: thirstyPlants.length === 1 
-              ? `Ta plante "${thirstyPlants[0].data().name}" a soif.`
-              : `${thirstyPlants.length} plantes attendent de l'eau ce matin.`,
+            title: title,
+            body: body,
           },
-          token: userData.fcmToken,
+          token: fcmToken,
         };
 
-        await admin.messaging().send(message);
-        console.log(`Notification envoyée à ${userData.displayName || userId}`);
+        try {
+          await admin.messaging().send(message);
+        } catch (sendError) {
+          // Si le token n'est plus valide (app désinstallée), on pourrait le supprimer ici
+          console.error(`Erreur d'envoi pour un token :`, sendError.code);
+        }
       }
     }
   } catch (error) {
-    console.error("Erreur globale lors de l'exécution:", error);
+    console.error("Erreur générale notifications :", error);
   }
 });

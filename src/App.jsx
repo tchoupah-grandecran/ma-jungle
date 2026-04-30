@@ -7,7 +7,7 @@ import { ROOMS } from './utils/constants';
 import { getMessaging, getToken } from 'firebase/messaging';
 
 // Icones
-import { Search, Bell, BellOff, LogOut, Plus, Droplets, CheckCircle2, Sprout, X } from 'lucide-react';
+import { Search, Bell, BellOff, LogOut, Plus, Droplets, CheckCircle2, Sprout, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 // Import des composants
 import Login from './pages/Login';
@@ -27,9 +27,9 @@ function App() {
   const [activeRoom, setActiveRoom] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // NOUVEAUX ÉTATS POUR LES NOTIFICATIONS IN-APP
   const [showConfirmWaterAll, setShowConfirmWaterAll] = useState(false);
-  const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'info' }
+  const [isMissionExpanded, setIsMissionExpanded] = useState(false);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -46,7 +46,6 @@ function App() {
     return unsubscribe;
   }, [user]);
 
-  // Gestion automatique de la disparition du toast
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 3000);
@@ -72,7 +71,7 @@ function App() {
         lastWatering: now,
         history: arrayUnion(now)
       });
-      setToast({ message: `${name || 'La plante'} a bien été arrosée ! 🌿`, type: 'success' });
+      if (name) setToast({ message: `${name} a bien été arrosée ! 🌿`, type: 'success' });
     } catch (error) { 
       console.error("Erreur :", error); 
     }
@@ -82,6 +81,7 @@ function App() {
     const count = thirstyPlants.length;
     await Promise.all(thirstyPlants.map(plant => handleWatering(plant.id)));
     setShowConfirmWaterAll(false);
+    setIsMissionExpanded(false);
     setToast({ 
       message: `${count} ${count > 1 ? 'plantes ont été arrosées' : 'plante a été arrosée'} ! ✨`, 
       type: 'success' 
@@ -89,41 +89,30 @@ function App() {
   };
 
   const handleNotificationRequest = async () => {
-  try {
-    const permission = await Notification.requestPermission();
-    setNotifPermission(permission);
-    
-    if (permission === 'granted') {
-      const messaging = getMessaging();
-      
-      // On récupère l'enregistrement déjà fait dans main.jsx
-      const registration = await navigator.serviceWorker.getRegistration();
-      
-      if (!registration) {
-        throw new Error("Le Service Worker n'est pas encore prêt.");
+    try {
+      const permission = await Notification.requestPermission();
+      setNotifPermission(permission);
+      if (permission === 'granted') {
+        const messaging = getMessaging();
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) throw new Error("Service Worker non prêt");
+        const token = await getToken(messaging, { 
+          vapidKey: 'BJ_ta6RLynMO3OswuqxOqO89PRTfGMKhKAeI2C3WiOBNvCN5P3EwngLbjwuyvsgwgFxtjt6GnXIsr6hfg18FZtw',
+          serviceWorkerRegistration: registration 
+        });
+        if (token) {
+          await setDoc(doc(db, "users", user.uid), {
+            fcmToken: token,
+            familyId: FAMILY_ID,
+            lastActive: new Date().toISOString()
+          }, { merge: true });
+          setToast({ message: "Notifications activées !", type: 'info' });
+        }
       }
-
-      const token = await getToken(messaging, { 
-        vapidKey: 'BJ_ta6RLynMO3OswuqxOqO89PRTfGMKhKAeI2C3WiOBNvCN5P3EwngLbjwuyvsgwgFxtjt6GnXIsr6hfg18FZtw',
-        serviceWorkerRegistration: registration 
-      });
-      
-      if (token) {
-        await setDoc(doc(db, "users", user.uid), {
-          fcmToken: token,
-          familyId: FAMILY_ID,
-          lastActive: new Date().toISOString()
-        }, { merge: true });
-        
-        setToast({ message: "Notifications activées" + "\u00A0" + "!", type: 'info' });
-      }
+    } catch (error) { 
+      setToast({ message: "Erreur activation notifications", type: 'error' });
     }
-  } catch (error) { 
-    console.error("Erreur FCM :", error);
-    // On affiche l'erreur réelle dans le toast pour débugger
-    setToast({ message: `Erreur : ${error.code || 'Vérifie ta connexion'}`, type: 'error' });
-  }
-};
+  };
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#F9F7F2]">
@@ -134,146 +123,167 @@ function App() {
   if (!user) return <Login />;
 
   return (
-    <div className="min-h-screen bg-[#F9F7F2] font-sans text-[#2A3930] selection:bg-[#8A9A5B]/20">
+    <div className="min-h-screen bg-[#F9F7F2] font-sans text-[#2A3930] selection:bg-[#8A9A5B]/20 overflow-x-hidden">
       
-      {/* TOAST NOTIFICATION IN-APP */}
-{toast && (
-  <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-xs animate-in fade-in slide-in-from-top-4 duration-300">
-    <div className="bg-[#2A3930] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center justify-between gap-3 border border-white/10">
-      <span className="text-sm font-bold leading-tight">
-        {toast.message}
-      </span>
-      <button onClick={() => setToast(null)} className="shrink-0 ml-2">
-        <X size={16} />
-      </button>
-    </div>
-  </div>
-)}
+      {/* TOAST */}
+      {toast && (
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-xs animate-in fade-in slide-in-from-top-4 duration-500 ease-out">
+          <div className="bg-[#2A3930] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center justify-between gap-3 border border-white/10">
+            <span className="text-sm font-bold leading-tight">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="shrink-0"><X size={16} /></button>
+          </div>
+        </div>
+      )}
 
-{/* MODALE DE CONFIRMATION ARROSAGE GROUPÉ */}
-{showConfirmWaterAll && (
-  <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-[#2A3930]/60 backdrop-blur-sm animate-in fade-in duration-200">
-    <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl text-center space-y-6">
-      <div className="w-20 h-20 bg-[#F9F7F2] rounded-full flex items-center justify-center mx-auto text-[#BF6B4E]">
-        <Droplets size={40} fill="currentColor" />
-      </div>
-      <div>
-        {/* On utilise {"text" + "\u00A0" + "!"} pour forcer l'espace insécable */}
-        <h3 className="font-rounded font-black text-2xl">
-          {"Tout le monde a bu" + "\u00A0" + "?"}
-        </h3>
-        <p className="text-gray-500 text-sm mt-2 leading-relaxed px-2">
-          {thirstyPlants.length > 1 
-            ? `Confirmer l'arrosage des ${thirstyPlants.length} plantes assoiffées` + "\u00A0" + "?"
-            : `Confirmer l'arrosage de la plante assoiffée` + "\u00A0" + "?"
-          }
-        </p>
-      </div>
-      <div className="flex flex-col gap-3">
-        <button 
-          onClick={waterAllThirsty}
-          className="w-full bg-[#BF6B4E] text-white py-4 rounded-2xl font-bold shadow-lg shadow-[#BF6B4E]/20 active:scale-[0.98] transition-all"
-        >
-          {"Oui, c'est fait" + "\u00A0" + "!"}
-        </button>
-        <button 
-          onClick={() => setShowConfirmWaterAll(false)}
-          className="w-full bg-gray-100 text-gray-500 py-4 rounded-2xl font-bold active:scale-[0.98] transition-all"
-        >
-          Plus tard
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+      {/* MODALE CONFIRMATION GLOBALE */}
+      {showConfirmWaterAll && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-[#2A3930]/40 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl text-center space-y-6 animate-in zoom-in-95 duration-300 ease-out">
+            <div className="w-20 h-20 bg-[#F9F7F2] rounded-full flex items-center justify-center mx-auto text-[#BF6B4E]">
+              <Droplets size={40} fill="currentColor" fillOpacity={0.3} className="animate-pulse" />
+            </div>
+            <h3 className="font-rounded font-black text-2xl">{"Tout le monde a bu" + "\u00A0" + "?"}</h3>
+            <div className="flex flex-col gap-3 text-left">
+              <button onClick={waterAllThirsty} className="w-full bg-[#BF6B4E] text-white py-4 rounded-2xl font-bold shadow-lg shadow-[#BF6B4E]/20 active:scale-95 transition-all">{"Oui, c'est fait" + "\u00A0" + "!"}</button>
+              <button onClick={() => setShowConfirmWaterAll(false)} className="w-full bg-gray-100 text-gray-400 py-4 rounded-2xl font-bold active:scale-95 transition-all text-center uppercase text-[10px] tracking-widest">Plus tard</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <main className="p-6 max-w-md mx-auto pt-6 pb-32 text-left">
+      <main className="p-6 max-w-md mx-auto pt-6 pb-32">
         {/* HEADER */}
         <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="font-rounded font-black text-4xl tracking-tight">Ma Jungle</h1>
-            <p className="text-[#8A9A5B] font-bold text-sm mt-1 uppercase tracking-widest">
+          <div className="animate-in slide-in-from-left duration-700 ease-out">
+            <h1 className="font-rounded font-black text-4xl tracking-tight text-left">Ma Jungle</h1>
+            <p className="text-[#8A9A5B] font-bold text-sm mt-1 uppercase tracking-widest text-left opacity-80">
               {plants.length} {plants.length > 1 ? 'amies à chérir' : 'amie à chérir'}
             </p>
           </div>
-          <div className="flex gap-2">
-             <button 
-  onClick={handleNotificationRequest} 
-  className={`p-3 rounded-2xl transition-all active:scale-[0.95] ${
-    notifPermission === 'granted' 
-      ? 'bg-white text-[#8A9A5B] shadow-sm' 
-      : 'bg-white/50 text-gray-300'
-  }`}
-  title={notifPermission === 'granted' ? "Notifications actives" : "Activer les notifications"}
->
-  {notifPermission === 'granted' ? (
-    <Bell size={20} fill="currentColor" fillOpacity={0.1} />
-  ) : (
-    <BellOff size={20} />
-  )}
-</button>
-            <button onClick={() => auth.signOut()} className="p-3 bg-white rounded-2xl text-[#BF6B4E] shadow-sm hover:bg-red-50 transition-all">
-              <LogOut size={20} />
+          <div className="flex gap-2 animate-in slide-in-from-right duration-700 ease-out">
+            <button onClick={handleNotificationRequest} className={`p-3 rounded-2xl transition-all duration-300 ${notifPermission === 'granted' ? 'bg-white text-[#8A9A5B] shadow-sm' : 'bg-white/50 text-gray-300'}`}>
+              {notifPermission === 'granted' ? <Bell size={20} fill="currentColor" fillOpacity={0.1} /> : <BellOff size={20} />}
             </button>
+            <button onClick={() => auth.signOut()} className="p-3 bg-white rounded-2xl text-[#BF6B4E] shadow-sm active:scale-90 transition-transform"><LogOut size={20} /></button>
           </div>
         </div>
 
-        {/* MISSION DU JOUR */}
+        {/* MISSION ARROSAGE INTERACTIVE (ANIMATION ORGANIQUE) */}
         {thirstyPlants.length > 0 && (
-          <div className="mb-10 bg-[#2A3930] text-white rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden">
-            <div className="relative z-10">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="font-rounded font-black text-xl">Mission Arrosage</h3>
-                  <p className="text-[#BF6B4E] text-[10px] font-black uppercase tracking-widest mt-1">
+          <div 
+            className={`mb-10 bg-[#2A3930] text-white rounded-[2.5rem] shadow-2xl transition-all duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] relative overflow-hidden group ${isMissionExpanded ? 'ring-8 ring-[#2A3930]/5' : ''}`}
+          >
+            {/* Header de la mission */}
+            <div 
+              onClick={() => setIsMissionExpanded(!isMissionExpanded)}
+              className="p-6 flex justify-between items-center cursor-pointer relative z-10"
+            >
+              <div className="space-y-1">
+                <h3 className="font-rounded font-black text-xl text-left tracking-tight">Mission Arrosage</h3>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2 w-2 rounded-full bg-[#BF6B4E] animate-ping" />
+                  <p className="text-[#BF6B4E] text-[10px] font-black uppercase tracking-widest text-left">
                     {thirstyPlants.length === 1 ? "1 SOS détecté" : `${thirstyPlants.length} SOS détectés`}
                   </p>
                 </div>
-                <button 
-                  onClick={() => setShowConfirmWaterAll(true)} 
-                  className="bg-[#BF6B4E] text-white p-3.5 rounded-2xl shadow-lg active:scale-95 transition-all"
-                >
-                  <CheckCircle2 size={22} />
-                </button>
               </div>
-              <div className="flex -space-x-3 overflow-hidden">
-                {thirstyPlants.slice(0, 5).map(p => (
-                  <img key={p.id} src={p.imageUrl} className="inline-block h-12 w-12 rounded-2xl ring-4 ring-[#2A3930] object-cover shadow-xl" alt={p.name} />
-                ))}
+              
+              <div className="flex items-center gap-3">
+                {!isMissionExpanded && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowConfirmWaterAll(true); }} 
+                    className="bg-[#BF6B4E] text-white p-3.5 rounded-2xl shadow-lg active:scale-90 transition-all hover:rotate-6"
+                  >
+                    <Droplets size={22} />
+                  </button>
+                )}
+                <div className={`p-2 rounded-full bg-white/5 transition-transform duration-500 ${isMissionExpanded ? 'rotate-180' : ''}`}>
+                  <ChevronDown size={20} className="text-white/40" />
+                </div>
               </div>
             </div>
-            <Droplets className="absolute -right-4 -bottom-4 text-white/5" size={120} />
+
+            {/* Zone de contenu avec transition Grid (pour un effet fluide et sans saccade) */}
+            <div className={`grid transition-all duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${isMissionExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+              <div className="overflow-hidden">
+                <div className="p-6 pt-0 space-y-4">
+                  <div className="h-px bg-white/10 w-full mb-4" />
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto no-scrollbar pr-1">
+                    {thirstyPlants.map((p, idx) => (
+                      <div 
+                        key={p.id} 
+                        style={{ transitionDelay: `${idx * 50}ms` }}
+                        className={`flex items-center justify-between bg-white/5 p-3 rounded-[1.8rem] border border-white/5 hover:bg-white/10 transition-all duration-500 transform ${isMissionExpanded ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <img src={p.imageUrl} className="h-14 w-14 rounded-[1.2rem] object-cover shadow-2xl border border-white/10" alt="" />
+                          <div className="text-left">
+                            <p className="font-bold text-sm leading-tight text-white/90">{p.name}</p>
+                            <p className="text-[9px] text-[#8A9A5B] font-black uppercase tracking-tighter mt-1">{p.room || "Partout"}</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleWatering(p.id, p.name)}
+                          className="bg-white/10 hover:bg-[#BF6B4E] p-3.5 rounded-2xl transition-all duration-300 group/btn active:scale-90"
+                        >
+                          <Droplets size={18} className="group-hover/btn:scale-110 transition-transform" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button 
+                    onClick={() => setShowConfirmWaterAll(true)}
+                    className="w-full mt-6 bg-[#BF6B4E] py-4 rounded-[1.8rem] font-black text-[10px] uppercase tracking-[0.25em] shadow-lg shadow-[#BF6B4E]/20 active:scale-[0.98] transition-all"
+                  >
+                    Valider l'arrosage
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Version "Compacte" affichée uniquement quand fermé */}
+            {!isMissionExpanded && (
+              <div className="px-6 pb-6 animate-in fade-in slide-in-from-bottom-2 duration-700">
+                 <div className="flex -space-x-3 items-center">
+                  {thirstyPlants.slice(0, 5).map((p, i) => (
+                    <img 
+                      key={p.id} 
+                      src={p.imageUrl} 
+                      style={{ zIndex: 10 - i }}
+                      className="h-10 w-10 rounded-[0.8rem] ring-[3px] ring-[#2A3930] object-cover shadow-2xl transition-transform hover:-translate-y-1" 
+                      alt="" 
+                    />
+                  ))}
+                  {thirstyPlants.length > 5 && (
+                    <div className="h-10 w-10 rounded-[0.8rem] bg-[#3A4D41] ring-[3px] ring-[#2A3930] flex items-center justify-center text-[10px] font-black z-0">
+                      +{thirstyPlants.length - 5}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* RECHERCHE & FILTRES */}
         <div className="sticky top-4 z-40 space-y-4 mb-8">
           <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-[#8A9A5B] transition-colors" size={18} />
             <input 
               type="text" 
               placeholder="Chercher une plante..." 
               value={searchQuery} 
               onChange={(e) => setSearchQuery(e.target.value)} 
-              className="w-full p-4 pl-12 rounded-[1.5rem] bg-white border-none shadow-sm outline-none text-sm font-medium" 
+              className="w-full p-4 pl-12 rounded-[1.5rem] bg-white shadow-sm outline-none text-sm font-medium focus:ring-2 focus:ring-[#8A9A5B]/20 transition-all" 
             />
           </div>
 
           <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-            <button 
-              onClick={() => setActiveRoom('all')} 
-              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeRoom === 'all' ? 'bg-[#2A3930] text-white shadow-lg' : 'bg-white text-gray-400'}`}
-            >
-              Tout
-            </button>
+            <button onClick={() => setActiveRoom('all')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeRoom === 'all' ? 'bg-[#2A3930] text-white shadow-lg' : 'bg-white text-gray-400 hover:text-gray-600'}`}>Tout</button>
             {ROOMS.map(room => {
               const Icon = room.icon;
               return (
-                <button 
-                  key={room.id} 
-                  onClick={() => setActiveRoom(room.id)} 
-                  className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeRoom === room.id ? 'bg-[#2A3930] text-white shadow-lg' : 'bg-white text-gray-400'}`}
-                >
+                <button key={room.id} onClick={() => setActiveRoom(room.id)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeRoom === room.id ? 'bg-[#2A3930] text-white shadow-lg' : 'bg-white text-gray-400 hover:text-gray-600'}`}>
                   <Icon size={14} /> {room.label}
                 </button>
               );
@@ -282,14 +292,10 @@ function App() {
         </div>
 
         {/* LISTE DES PLANTES */}
-        <div className="grid grid-cols-1 gap-8">
+        <div className="grid grid-cols-1 gap-8 animate-in fade-in duration-1000 slide-in-from-bottom-4">
           {filteredPlants.map(plant => (
-            <div key={plant.id} onClick={() => setSelectedPlant(plant)}>
-              <PlantCard 
-                plant={plant} 
-                onWater={() => handleWatering(plant.id, plant.name)} 
-                onEdit={setEditingPlant} 
-              />
+            <div key={plant.id} onClick={() => setSelectedPlant(plant)} className="cursor-pointer">
+              <PlantCard plant={plant} onWater={() => handleWatering(plant.id, plant.name)} onEdit={setEditingPlant} />
             </div>
           ))}
         </div>
@@ -298,15 +304,41 @@ function App() {
         <div className="fixed bottom-8 left-0 right-0 flex justify-center z-50 pointer-events-none">
           <button 
             onClick={() => setShowAdd(true)} 
-            className="bg-[#2A3930] text-white px-8 py-4 rounded-[2rem] text-[11px] uppercase tracking-[0.2em] font-black flex items-center gap-3 active:scale-95 transition-all shadow-2xl pointer-events-auto border border-white/10"
+            className="bg-[#2A3930] text-white px-8 py-5 rounded-[2.2rem] text-[10px] uppercase tracking-[0.25em] font-black flex items-center gap-3 active:scale-95 transition-all shadow-2xl pointer-events-auto border border-white/10 hover:bg-[#3A4D41]"
           >
             <Plus size={18} strokeWidth={4} /> Ajouter
           </button>
         </div>
 
-        {showAdd && <AddPlant onSave={() => { setShowAdd(false); setToast({message: "Nouvelle amie ajoutée !", type: 'success'}); }} onCancel={() => setShowAdd(false)} />}
-        {editingPlant && <AddPlant editPlant={editingPlant} onSave={() => { setEditingPlant(null); setToast({message: "Modifications enregistrées", type: 'info'}); }} onCancel={() => setEditingPlant(null)} />}
-        {selectedPlant && <PlantDetails plant={selectedPlant} onClose={() => setSelectedPlant(null)} />}
+        {/* MODALES */}
+        {selectedPlant && (
+          <PlantDetails 
+            plant={selectedPlant} 
+            onClose={() => setSelectedPlant(null)} 
+            onEdit={(plant) => setEditingPlant(plant)} 
+          />
+        )}
+
+        {showAdd && (
+          <AddPlant 
+            onSave={() => { 
+              setShowAdd(false); 
+              setToast({message: "Nouvelle amie ajoutée !", type: 'success'}); 
+            }} 
+            onCancel={() => setShowAdd(false)} 
+          />
+        )}
+
+        {editingPlant && (
+          <AddPlant 
+            editPlant={editingPlant} 
+            onSave={() => { 
+              setEditingPlant(null); 
+              setToast({message: "Modifications enregistrées", type: 'info'}); 
+            }} 
+            onCancel={() => setEditingPlant(null)} 
+          />
+        )}
       </main>
     </div>
   );

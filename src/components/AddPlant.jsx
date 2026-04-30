@@ -91,7 +91,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-[#2A3930]/60 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 bg-[#2A3930]/60 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-[#F9F7F2] w-full max-w-lg rounded-t-[3rem] sm:rounded-[3.5rem] shadow-2xl overflow-hidden relative flex flex-col max-h-[95vh]">
         
         {/* BOUTON FERMER */}
@@ -102,35 +102,52 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
           <X size={24} className="text-[#2A3930]" />
         </button>
 
-        <form onSubmit={handleSubmit} className="p-6 sm:p-8 pt-12 overflow-y-auto no-scrollbar space-y-4 text-left min-w-0">
+        <form onSubmit={handleSubmit} className="p-6 sm:p-8 pt-8 overflow-y-auto no-scrollbar space-y-4 text-left min-w-0">
           
-          <div className="text-left mb-2">
+          <div className="text-center mb-4">
              <h2 className="font-rounded text-3xl text-[#2A3930]">
                 {editPlant ? 'Modifier' : 'Nouvelle amie'}
              </h2>
           </div>
 
           {/* PHOTO */}
-          <div className="flex justify-center mb-2">
-            <div className="relative w-32 h-32 rounded-[2.5rem] bg-white shadow-xl overflow-hidden border-4 border-white group">
-              {previewUrl ? (
-                <img src={previewUrl} className="w-full h-full object-cover" alt="Preview" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-[#2A3930]/20">
-                  <Camera size={32} />
-                </div>
-              )}
-              <input type="file" onChange={(e) => {
-                const file = e.target.files[0];
-                if(file) { setImageFile(file); setPreviewUrl(URL.createObjectURL(file)); }
-              }} className="absolute inset-0 opacity-0 cursor-pointer" />
-            </div>
-          </div>
+<div className="flex justify-center mb-6">
+  <div className="relative group"> {/* Conteneur parent pour l'ensemble */}
+    <div className="relative w-32 h-32 rounded-[2.5rem] bg-white shadow-xl overflow-hidden">
+      {previewUrl ? (
+        <img src={previewUrl} className="w-full h-full object-cover" alt="Preview" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-[#2A3930]">
+          <Sprout size={48} />
+        </div>
+      )}
+      
+      {/* Input invisible qui couvre tout le cercle */}
+      <input 
+        type="file" 
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files[0];
+          if(file) { 
+            setImageFile(file); 
+            setPreviewUrl(URL.createObjectURL(file)); 
+          }
+        }} 
+        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+      />
+    </div>
+
+    {/* PETIT BADGE CAMERA EN BAS À DROITE */}
+    <div className="absolute -bottom-1 -right-1 bg-[#2A3930] text-white p-2.5 rounded-2xl shadow-lg z-0 transition-transform group-active:scale-90">
+      <Camera size={18} strokeWidth={2.5} />
+    </div>
+  </div>
+</div>
 
           {/* INFOS DE BASE */}
           <div className="space-y-3">
             <input 
-              placeholder="Nom de la plante..." 
+              placeholder="Nom de la plante" 
               value={formData.name} 
               onChange={e => setFormData({...formData, name: e.target.value})}
               className="w-full p-4 rounded-2xl bg-white shadow-sm outline-none font-bold text-lg text-[#2A3930] placeholder:text-gray-300"
@@ -219,7 +236,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
                   key={num} type="button" onClick={() => setFormData({...formData, waterAmount: num})}
                   className="transition-transform active:scale-125"
                 >
-                  <Droplets size={20} fill={num <= formData.waterAmount ? "#BF6B4E" : "none"} stroke={num <= formData.waterAmount ? "#BF6B4E" : "#E5E7EB"} />
+                  <Droplets size={20} fill={num <= formData.waterAmount ? "#BF6B4E33" : "none"} stroke={num <= formData.waterAmount ? "#BF6B4E" : "#E5E7EB"} />
                 </button>
               ))}
             </div>

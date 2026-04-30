@@ -14,11 +14,7 @@ exports.dailyWateringReminder = onSchedule({
   today.setHours(0, 0, 0, 0);
 
   try {
-    // 1. Récupérer tous les utilisateurs ayant un token
     const usersSnapshot = await db.collection("users").where("fcmToken", "!=", null).get();
-
-    // 2. FILTRE ANTI-DOUBLON : On utilise une Map pour ne garder qu'un token unique
-    // Clé : fcmToken, Valeur : familyId
     const uniqueTokensMap = new Map();
     
     usersSnapshot.forEach(doc => {
@@ -28,18 +24,12 @@ exports.dailyWateringReminder = onSchedule({
       }
     });
 
-    console.log(`Traitement de ${uniqueTokensMap.size} notifications uniques.`);
-
-    // 3. Boucler sur les tokens uniques
     for (const [fcmToken, familyId] of uniqueTokensMap) {
-      
-      // Récupérer les plantes de la famille
       const plantsSnapshot = await db.collection("plants")
         .where("familyId", "==", familyId)
         .get();
 
       const plants = plantsSnapshot.docs.map(doc => doc.data());
-      
       const latePlants = [];
       const todayPlants = [];
 
@@ -55,15 +45,17 @@ exports.dailyWateringReminder = onSchedule({
         }
       });
 
-      // 4. Déterminer le message
       let title = "Mission Arrosage 💧";
       let body = "";
 
+      // --- LOGIQUE AVEC GESTION DES PLURIELS ---
+
       if (latePlants.length > 0) {
+        const s = latePlants.length > 1 ? "s" : "";
         const messages = [
-          `Alerte sécheresse ! ${latePlants.length} amies sont en retard. Vite, aux arrosoirs ! 🚨`,
-          `J'en connais qui vont finir déshydratées... Arrose vite tes plantes en retard ! 🥀`,
-          `Oups ! Tu as oublié quelques amies... Il y a des urgences dans la jungle ! 🏃💨`
+          `Alerte sécheresse ! ${latePlants.length} amie${s} ${latePlants.length > 1 ? 'sont' : 'est'} en retard. Vite, aux arrosoirs ! 🚨`,
+          `J'en connais qui vont finir déshydratée${s}... Arrose vite tes plantes en retard ! 🥀`,
+          `Oups ! Tu as oublié quelque${s} amie${s}... Il y a des urgences dans la jungle ! 🏃💨`
         ];
         body = messages[Math.floor(Math.random() * messages.length)];
         title = "Urgence Jungle ! ⚠️";
@@ -88,25 +80,20 @@ exports.dailyWateringReminder = onSchedule({
         body = messages[Math.floor(Math.random() * messages.length)];
       }
 
-      // 5. Envoi définitif
       if (body) {
         const message = {
-          notification: {
-            title: title,
-            body: body,
-          },
+          notification: { title, body },
           token: fcmToken,
         };
 
         try {
           await admin.messaging().send(message);
         } catch (sendError) {
-          // Si le token n'est plus valide (app désinstallée), on pourrait le supprimer ici
-          console.error(`Erreur d'envoi pour un token :`, sendError.code);
+          console.error(`Erreur d'envoi :`, sendError.code);
         }
       }
     }
   } catch (error) {
-    console.error("Erreur générale notifications :", error);
+    console.error("Erreur générale :", error);
   }
 });

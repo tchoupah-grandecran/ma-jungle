@@ -50,12 +50,12 @@ export default function PlantCard({ plant, onWater, onEdit }) {
         />
         
         {/* Overlay Dégradé */}
-        <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-black/60 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
         {/* Message Alert Si Retard */}
         {isOverdue && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-20 pointer-events-none">
-            <div className="bg-red-600 text-white p-4 rounded-full shadow-2xl animate-bounce">
+            <div className="bg-red-600 text-white p-4 rounded-full shadow-2xl">
               <AlertCircle size={32} strokeWidth={3} />
             </div>
             <span className="bg-red-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Oubliée !</span>
@@ -69,22 +69,24 @@ export default function PlantCard({ plant, onWater, onEdit }) {
           </div>
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map(n => (
-              <div key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (plant.waterAmount || 3) ? (isOverdue ? 'bg-red-500' : 'bg-[#BF6B4E]') : 'bg-gray-200'}`} />
+              <div key={n} className={`h-1.5 w-1.5 rounded-full ${n <= (plant.waterAmount || 3) ? (isOverdue ? 'bg-red-500' : 'bg-[#BF6B4E]') : 'bg-[#BF6B4E33]'}`} />
             ))}
           </div>
         </div>
 
-        {/* BOUTON MODIFIER - FIXÉ ICI (Visible tout le temps mais plus discret) */}
-        <button 
-          onClick={(e) => { e.stopPropagation(); onEdit(plant); }} 
-          className="absolute top-6 right-6 bg-white/80 backdrop-blur-md text-[#2A3930] p-3 rounded-2xl shadow-lg hover:bg-[#2A3930] hover:text-white transition-all duration-300 z-30"
+        {/* NOM - AJUSTEMENT DYNAMIQUE ICI */}
+        <div 
+          className="absolute bottom-4 left-6 right-6 text-left overflow-visible"
+          style={{ containerType: 'inline-size' }} 
         >
-          <Edit2 size={18} />
-        </button>
-
-        {/* NOM */}
-        <div className="absolute bottom-2 left-4 right-8 text-left">
-          <h3 className="font-rounded font-black text-4xl text-white capitalize leading-tight drop-shadow-lg text-left">
+          <h3 
+            className="font-rounded font-black text-white capitalize leading-none drop-shadow-2xl whitespace-nowrap"
+            style={{ 
+                // 12cqw signifie 12% de la largeur du conteneur. 
+                // On met un min/max pour éviter que ce soit ridicule sur mini écran ou TV.
+                fontSize: 'clamp(24px, 11cqw, 48px)' 
+            }}
+          >
             {plant.name}
           </h3>
         </div>
@@ -93,9 +95,9 @@ export default function PlantCard({ plant, onWater, onEdit }) {
       {/* SECTION INFOS */}
       <div className={`p-8 transition-colors duration-500 text-left ${isOverdue ? 'bg-red-50' : 'bg-white'}`}>
         <div className="flex items-center justify-between gap-4 text-left">
-          <div className="space-y-2.5 min-w-0 text-left">
+          <div className="space-y-2.5 min-w-0 text-left flex-1">
             {plant.variety && (
-              <p className="text-[#2A3930] font-bold text-sm italic opacity-80 leading-tight truncate text-left">
+              <p className="text-[#2A3930] font-bold text-sm italic opacity-60 leading-tight truncate text-left">
                 {plant.variety}
               </p>
             )}
@@ -121,15 +123,15 @@ export default function PlantCard({ plant, onWater, onEdit }) {
             onClick={handleWaterClick}
             disabled={isWatering || alreadyWateredToday}
             className={`h-16 w-16 shrink-0 rounded-[1.8rem] flex items-center justify-center transition-all duration-300 ${
-              isWatering ? 'bg-blue-500 scale-90' : 
+              isWatering ? 'bg-blue-500 scale-90 shadow-blue-200 shadow-xl' : 
               alreadyWateredToday ? 'bg-[#F9F7F2] text-[#8A9A5B]/40' :
               isOverdue ? 'bg-red-600 text-white shadow-lg animate-pulse scale-110' :
               (isDueToday) ? 'bg-[#BF6B4E] text-white shadow-lg' : 
-              'bg-[#F9F7F2] text-[#2A3930] hover:bg-[#2A3930] hover:text-white'
+              'bg-[#F9F7F2] text-[#2A3930] hover:bg-[#2A3930] hover:text-white shadow-sm'
             }`}
           >
             <div className="flex flex-col items-center">
-              <Droplets size={22} fill="currentColor" fillOpacity={0.3} className={isWatering ? 'animate-bounce' : ''} />
+              <Droplets size={22} fill="currentColor" fillOpacity={0.3} className={isWatering ? 'animate-bounce text-white' : ''} />
               <span className="text-[9px] font-black mt-0.5 tracking-tighter uppercase">{statusText}</span>
             </div>
           </button>

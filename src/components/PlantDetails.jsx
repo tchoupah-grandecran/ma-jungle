@@ -19,7 +19,6 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
     return unsub;
   }, [plant.id]);
 
-  // Calcul du prochain arrosage
   const nextWaterDate = addDays(new Date(plant.lastWatering), plant.frequency);
   const isThirsty = nextWaterDate <= new Date();
 
@@ -44,20 +43,20 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
   const RoomIcon = roomInfo?.icon || MapPin;
 
   return (
-    <div className="fixed inset-0 bg-white z-50 flex flex-col animate-in slide-in-from-right duration-300">
+    <div className="fixed inset-0 bg-white dark:bg-jungle-deep z-50 flex flex-col animate-in slide-in-from-right duration-300 transition-colors">
       
       {/* MODALE DE CONFIRMATION DE SUPPRESSION */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#2A3930]/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[3rem] p-8 w-full max-w-sm shadow-2xl text-center space-y-6">
-            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-500">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#2A3930]/60 dark:bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-jungle-green rounded-[3rem] p-8 w-full max-w-sm shadow-2xl text-center space-y-6">
+            <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-500">
               <AlertTriangle size={40} />
             </div>
             <div>
-              <h3 className="font-rounded font-black text-2xl text-center">
+              <h3 className="font-rounded font-black text-2xl text-center dark:text-white leading-tight">
                 {"Supprimer" + "\u00A0" + plant.name + "\u00A0" + "?"}
               </h3>
-              <p className="text-gray-500 text-sm mt-2 leading-relaxed px-4 text-center">
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2 leading-relaxed px-4 text-center">
                 {"Cette action est irréversible." + "\u00A0" + plant.name + "\u00A0" + "nous a quitté" + "\u00A0" + "?"}
               </p>
             </div>
@@ -70,7 +69,7 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
               </button>
               <button 
                 onClick={() => setShowDeleteConfirm(false)}
-                className="w-full bg-gray-100 text-gray-500 py-4 rounded-2xl font-bold active:scale-[0.98] transition-all"
+                className="w-full bg-gray-100 dark:bg-jungle-deep text-gray-500 dark:text-gray-400 py-4 rounded-2xl font-bold active:scale-[0.98] transition-all"
               >
                 Garder mon amie
               </button>
@@ -80,13 +79,13 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
       )}
 
       {/* Header */}
-      <div className="p-6 flex items-center justify-between border-b border-gray-100 shrink-0">
+      <div className="p-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5 shrink-0">
         <div className="flex items-center gap-4 text-left">
-          <button onClick={onClose} className="p-2 bg-gray-50 rounded-2xl text-[#2A3930]">
+          <button onClick={onClose} className="p-2 bg-gray-50 dark:bg-jungle-green rounded-2xl text-[#2A3930] dark:text-jungle-cream">
             <ChevronLeft size={24} />
           </button>
           <div className="text-left">
-            <h2 className="text-xl font-rounded font-black text-[#2A3930] capitalize leading-tight">
+            <h2 className="text-xl font-rounded font-black text-[#2A3930] dark:text-white capitalize leading-tight">
               {plant.name}
             </h2>
             {plant.variety && (
@@ -98,20 +97,15 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* BOUTON MODIFIER */}
           <button 
             onClick={() => onEdit(plant)}
-            className="p-2.5 bg-[#F9F7F2] text-[#2A3930] rounded-2xl active:scale-90 transition-transform"
-            title="Modifier la plante"
+            className="p-2.5 bg-[#F9F7F2] dark:bg-jungle-green text-[#2A3930] dark:text-jungle-cream rounded-2xl active:scale-90 transition-transform"
           >
             <Edit2 size={20} />
           </button>
-
-          {/* BOUTON SUPPRIMER */}
           <button 
             onClick={() => setShowDeleteConfirm(true)}
-            className="p-2.5 bg-red-50 text-red-500 rounded-2xl active:scale-90 transition-transform"
-            title="Supprimer la plante"
+            className="p-2.5 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-2xl active:scale-90 transition-transform"
           >
             <Trash2 size={20} />
           </button>
@@ -121,20 +115,17 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {/* Photo & Badges */}
         <div className="h-80 w-full relative">
-          <img src={plant.imageUrl} className="w-full h-full object-cover shadow-inner" alt="" />
-          
-          {/* Overlay dégradé pour lisibilité des badges */}
+          <img src={plant.imageUrl} className="w-full h-full object-cover shadow-inner dark:brightness-75" alt="" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
           
           <div className="absolute bottom-6 left-6 right-6 flex flex-wrap gap-2">
-            <span className="bg-white/95 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg flex items-center gap-2 text-[#2A3930]">
+            <span className="bg-white/95 dark:bg-jungle-green/95 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg flex items-center gap-2 text-[#2A3930] dark:text-jungle-cream">
               <RoomIcon size={12} /> {roomInfo?.label}
             </span>
-            <span className="bg-white/95 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg flex items-center gap-2 text-[#2A3930]">
+            <span className="bg-white/95 dark:bg-jungle-green/95 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg flex items-center gap-2 text-[#2A3930] dark:text-jungle-cream">
               <MapPin size={12} /> {plant.spot}
             </span>
             
-            {/* BADGE PROCHAIN ARROSAGE */}
             <span className={`backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-xl flex items-center gap-2 border ${
               isThirsty 
               ? 'bg-red-500/90 text-white border-red-400' 
@@ -152,10 +143,10 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
         <div className="p-8 space-y-10 text-left">
           {/* Bloc Description */}
           {plant.description && (
-            <section className="bg-[#F9F7F2]/60 p-6 rounded-[2.5rem] border border-[#F9F7F2] relative">
+            <section className="bg-[#F9F7F2]/60 dark:bg-jungle-green/30 p-6 rounded-[2.5rem] border border-[#F9F7F2] dark:border-white/5 relative">
               <Quote size={20} className="text-[#8A9A5B]/20 absolute top-4 right-6" />
               <h3 className="text-[11px] font-black text-[#8A9A5B] uppercase tracking-[0.2em] mb-2">Note de cœur</h3>
-              <p className="text-sm text-[#2A3930] font-medium leading-relaxed italic text-left">
+              <p className="text-sm text-[#2A3930] dark:text-jungle-cream font-medium leading-relaxed italic text-left">
                 {`"${plant.description}"`}
               </p>
             </section>
@@ -163,10 +154,10 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
 
           {/* Historique Arrosage */}
           <section>
-            <h3 className="text-[11px] font-black text-[#2A3930]/40 uppercase tracking-[0.2em] mb-5 text-left">Historique</h3>
+            <h3 className="text-[11px] font-black text-[#2A3930]/40 dark:text-white/20 uppercase tracking-[0.2em] mb-5 text-left text-left">Historique</h3>
             <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
               {history.length > 0 ? history.slice(-5).reverse().map((date, i) => (
-                <div key={i} className="flex-shrink-0 bg-[#F9F7F2]/50 p-4 rounded-[1.5rem] text-center min-w-[100px] border border-[#F9F7F2]">
+                <div key={i} className="flex-shrink-0 bg-[#F9F7F2]/50 dark:bg-jungle-green/40 p-4 rounded-[1.5rem] text-center min-w-[100px] border border-[#F9F7F2] dark:border-white/5">
                   <p className="text-[10px] font-black text-[#8A9A5B] uppercase mb-2">
                     {format(new Date(date), 'EEE d MMM', { locale: fr })}
                   </p>
@@ -178,13 +169,22 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
 
           {/* Journal de bord */}
           <section className="pb-20">
-            <h3 className="text-[11px] font-black text-[#2A3930]/40 uppercase tracking-[0.2em] mb-5 text-left">Journal de bord</h3>
-            <form onSubmit={addNote} className="bg-gray-50 p-5 rounded-[2rem] mb-8 border border-gray-100 shadow-inner">
+            <h3 className="text-[11px] font-black text-[#2A3930]/40 dark:text-white/20 uppercase tracking-[0.2em] mb-5 text-left">Journal de bord</h3>
+            <form onSubmit={addNote} className="bg-gray-50 dark:bg-jungle-green p-5 rounded-[2rem] mb-8 border border-gray-100 dark:border-white/5 shadow-inner">
               <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
                 {NOTE_TYPES.map(t => {
                   const Icon = t.icon;
                   return (
-                    <button key={t.id} type="button" onClick={() => setNoteType(t.id)} className={`px-4 py-2 rounded-full text-[10px] font-bold flex items-center gap-2 transition-all shrink-0 ${noteType === t.id ? 'bg-[#2A3930] text-white shadow-md' : 'bg-white text-gray-400 border border-gray-100'}`}>
+                    <button 
+                      key={t.id} 
+                      type="button" 
+                      onClick={() => setNoteType(t.id)} 
+                      className={`px-4 py-2 rounded-full text-[10px] font-bold flex items-center gap-2 transition-all shrink-0 ${
+                        noteType === t.id 
+                        ? 'bg-[#2A3930] dark:bg-jungle-cream text-white dark:text-jungle-deep shadow-md' 
+                        : 'bg-white dark:bg-jungle-deep text-gray-400 dark:text-gray-500 border border-gray-100 dark:border-white/5'
+                      }`}
+                    >
                       <Icon size={12} /> {t.label}
                     </button>
                   );
@@ -195,7 +195,7 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
                   value={note} 
                   onChange={(e) => setNote(e.target.value)} 
                   placeholder="Écrire une note..." 
-                  className="flex-1 bg-transparent border-none outline-none text-sm font-medium" 
+                  className="flex-1 bg-transparent border-none outline-none text-sm font-medium dark:text-white placeholder-gray-400" 
                 />
                 <button type="submit" className="bg-[#BF6B4E] text-white p-2.5 rounded-xl shadow-lg active:scale-90 transition-transform">
                   <Plus size={18} />
@@ -208,14 +208,14 @@ export default function PlantDetails({ plant, onClose, onEdit }) {
                 const Icon = NOTE_TYPES.find(t => t.id === n.type)?.icon || Calendar;
                 return (
                   <div key={n.id} className="flex gap-5 items-start">
-                    <div className="p-3 bg-[#F9F7F2] rounded-2xl text-[#8A9A5B] shrink-0">
+                    <div className="p-3 bg-[#F9F7F2] dark:bg-jungle-green rounded-2xl text-[#8A9A5B] shrink-0">
                       <Icon size={18} />
                     </div>
-                    <div className="flex-1 border-b border-gray-50 pb-4">
-                      <p className="text-[10px] text-gray-400 font-black uppercase mb-1 text-left">
+                    <div className="flex-1 border-b border-gray-50 dark:border-white/5 pb-4">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase mb-1 text-left">
                         {format(new Date(n.date), 'd MMMM yyyy', { locale: fr })}
                       </p>
-                      <p className="text-sm text-[#2A3930] font-semibold leading-relaxed text-left">{n.text}</p>
+                      <p className="text-sm text-[#2A3930] dark:text-jungle-cream font-semibold leading-relaxed text-left">{n.text}</p>
                     </div>
                   </div>
                 );

@@ -4,7 +4,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, setDo
 import { addDays } from 'date-fns';
 import { useAuth } from './hooks/useAuth';
 import { ROOMS } from './utils/constants';
-import { getMessaging, getToken } from 'firebase/messaging';
+import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Icones
@@ -118,6 +118,17 @@ function App() {
     setToast({ message: `${count} plantes arrosées ! ✨`, type: 'success' });
   };
 
+  const messaging = getMessaging();
+
+// Handle foreground messages
+onMessage(messaging, (payload) => {
+  console.log('Foreground Message received. ', payload);
+  // You can customize how this notification appears when the app is in the foreground.
+  // For example, display a custom toast or an in-app banner instead of a system notification.
+  // Example:
+  // setToast({ message: payload.notification.title + ': ' + payload.notification.body, type: 'info' });
+});
+
   const handleNotificationRequest = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -127,7 +138,7 @@ function App() {
         const registration = await navigator.serviceWorker.getRegistration();
         if (registration) {
           const token = await getToken(messaging, { 
-            vapidKey: 'TON_VAPID_KEY',
+            vapidKey: '_dpYXbaqlfFQ95q0gQt2j_dJmC6gfcwk92LagY5WhAM',
             serviceWorkerRegistration: registration 
           });
           if (token) {

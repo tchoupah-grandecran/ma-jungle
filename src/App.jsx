@@ -4,7 +4,8 @@ import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, setDo
 import { addDays } from 'date-fns';
 import { useAuth } from './hooks/useAuth';
 import { ROOMS } from './utils/constants';
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import { messaging } from './services/firebase';
+import { getToken, onMessage } from 'firebase/messaging';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Icones
@@ -118,36 +119,40 @@ function App() {
     setToast({ message: `${count} plantes arrosées ! ✨`, type: 'success' });
   };
 
-  const messaging = getMessaging();
+  useEffect(() => {
+  const unsubscribe = onMessage(messaging, (payload) => {
+    console.log('Foreground message received:', payload);
+    setToast({ 
+      message: `${payload.notification?.title}: ${payload.notification?.body}`, 
+      type: 'info' 
+    });
+  });
+  return () => unsubscribe(); // cleanup on unmount
+}, []);
 
-// Handle foreground messages
-onMessage(messaging, (payload) => {
-  console.log('Foreground Message received. ', payload);
-  // You can customize how this notification appears when the app is in the foreground.
-  // For example, display a custom toast or an in-app banner instead of a system notification.
-  // Example:
-  // setToast({ message: payload.notification.title + ': ' + payload.notification.body, type: 'info' });
-});
-
-  const handleNotificationRequest = async () => {
-    try {
-      const permission = await Notification.requestPermission();
-      setNotifPermission(permission);
-      if (permission === 'granted') {
-        const messaging = getMessaging();
-        const registration = await navigator.serviceWorker.getRegistration();
-        if (registration) {
-          const token = await getToken(messaging, { 
-            vapidKey: '_dpYXbaqlfFQ95q0gQt2j_dJmC6gfcwk92LagY5WhAM',
-            serviceWorkerRegistration: registration 
-          });
-          if (token) {
-            await setDoc(doc(db, "users", user.uid), { fcmToken: token }, { merge: true });
-          }
+const handleNotificationRequest = async () => {
+  try {
+    const permission = await Notification.requestPermission();
+    setNotifPermission(permission);
+    if (permission === 'granted') {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        const token = await getToken(messaging, {  // ← use imported messaging
+          vapidKey: '_dpYXbaqlfFQ95q0gQt2j_dJmC6gfcwk92LagY5WhAM',
+          serviceWorkerRegistration: registration
+        });
+        if (token) {
+          await setDoc(doc(db, "users", user.uid), { fcmToken: token }, { merge: true });
+          setToast({ message: "Notifications activées ✓", type: 'success' });
         }
+      } else {
+        console.error("No service worker registration found");
       }
-    } catch (error) { console.error(error); }
-  };
+    }
+  } catch (error) { 
+    console.error("Notification setup error:", error); 
+  }
+};
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#F9F7F2] dark:bg-jungle-deep transition-colors duration-500">

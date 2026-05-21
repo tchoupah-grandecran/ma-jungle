@@ -12,9 +12,8 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Le SDK Firebase affiche automatiquement la bannière système en arrière-plan.
+// On utilise cet écouteur uniquement pour le suivi ou le débogage.
 messaging.onBackgroundMessage((payload) => {
-  self.registration.showNotification(payload.notification.title, {
-    body: payload.notification.body,
-    icon: '/icon-192.png'
-  });
+  console.log("Notification reçue en arrière-plan et affichée par Firebase :", payload);
 });

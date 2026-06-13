@@ -10,7 +10,7 @@ import { arrayRemove } from 'firebase/firestore';
 
 import { 
   Search, Bell, BellOff, LogOut, Plus, Droplets, 
-  Sprout, X, ChevronDown, Moon, Sun, Settings 
+  Sprout, X, ChevronDown, Moon, Sun, Settings, CloudSun 
 } from 'lucide-react';
 
 import Login from './pages/Login';
@@ -20,6 +20,10 @@ import PlantDetails from './components/PlantDetails';
 
 const FAMILY_ID = "NOTRE_JUNGLE_PARTAGEE";
 const VAPID_KEY = 'BJ_ta6RLynMO3OswuqxOqO89PRTfGMKhKAeI2C3WiOBNvCN5P3EwngLbjwuyvsgwgFxtjt6GnXIsr6hfg18FZtw';
+
+// Coordonnées géographiques par défaut pour l'API Météo (ex: Angers)
+const LAT = 47.47;
+const LON = -0.56;
 
 // ─── Notification helpers ──────────────────────────────────────────────────────
 
@@ -102,6 +106,9 @@ function App() {
   const [activeRoom, setActiveRoom] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ── Weather Factor State ──
+  const [weatherFactor, setWeatherFactor] = useState(1);
+
   // ── Notifications (Sécurisées pour le mobile) ──
   const [notifPermission, setNotifPermission] = useState(() => {
     return typeof Notification !== 'undefined' ? Notification.permission : 'denied';
@@ -114,6 +121,46 @@ function App() {
 
   // ── Helpers ──
   const showToast = (message, type = 'success') => setToast({ message, type });
+
+  // ─── Fetch Weather & Compute Factor ──────────────────────────────────────────
+  useEffect(() => {
+    async function fetchWeatherMetrics() {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=temperature_2m_max,relative_humidity_2m_mean,et0_fao_evapotranspiration&timezone=Europe/Paris&forecast_days=3`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Météo indisponible');
+        const data = await res.json();
+
+        // Moyenne des prévisions sur 3 jours pour lisser les tendances
+        const avgMaxTemp = data.daily.temperature_2m_max.reduce((a, b) => a + b, 0) / 3;
+        const avgHumidity = data.daily.relative_humidity_2m_mean.reduce((a, b) => a + b, 0) / 3;
+        const avgEvap = data.daily.et0_fao_evapotranspiration.reduce((a, b) => a + b, 0) / 3;
+
+        let score = 0;
+        if (avgEvap > 4) score += 2;
+        else if (avgEvap > 2.5) score += 1;
+        else if (avgEvap < 1) score -= 1;
+
+        if (avgMaxTemp > 30) score += 1;
+        if (avgMaxTemp < 15) score -= 1;
+
+        if (avgHumidity < 45) score += 1;
+        if (avgHumidity > 75) score -= 1;
+
+        // Conversion en facteur multiplicateur d'intervalle
+        if (score >= 3) setWeatherFactor(0.5);       // Fréquence doublée (Canicule)
+        else if (score === 2) setWeatherFactor(0.75); // Intervalle réduit de 25%
+        else if (score === 1) setWeatherFactor(0.85); // Intervalle réduit de 15%
+        else if (score <= -2) setWeatherFactor(1.4);  // Intervalle augmenté de 40% (Temps lourd/frais)
+        else if (score === -1) setWeatherFactor(1.2); // Intervalle augmenté de 20%
+        else setWeatherFactor(1);                     // Mode nominal
+      } catch (err) {
+        console.error("Échec du calcul météo dynamique. Mode nominal activé (1).", err);
+        setWeatherFactor(1);
+      }
+    }
+    if (user) fetchWeatherMetrics();
+  }, [user]);
 
   // ─── Theme effect ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -135,21 +182,29 @@ function App() {
     }
   }, [themeChoice]);
 
-  // ─── Plants subscription ─────────────────────────────────────────────────────
+  // ─── Plants subscription (Trié dynamiquement selon la météo) ──────────────────
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'plants'), where('familyId', '==', FAMILY_ID));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      
       data.sort((a, b) => {
-        const nA = addDays(new Date(a.lastWatering), a.frequency);
-        const nB = addDays(new Date(b.lastWatering), b.frequency);
+        // Si la plante est à l'intérieur, on atténue l'effet météo à hauteur de 30% d'impact seulement
+        const factorA = a.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
+        const factorB = b.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
+
+        const dynamicFreqA = Math.max(1, Math.round((a.baseFrequency || a.frequency) * factorA));
+        const dynamicFreqB = Math.max(1, Math.round((b.baseFrequency || b.frequency) * factorB));
+
+        const nA = addDays(new Date(a.lastWatering), dynamicFreqA);
+        const nB = addDays(new Date(b.lastWatering), dynamicFreqB);
         return nA - nB;
       });
       setPlants(data);
     });
     return unsubscribe;
-  }, [user]);
+  }, [user, weatherFactor]);
 
   // ─── Toast auto-dismiss ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -160,7 +215,7 @@ function App() {
 
   // ─── FCM foreground messages ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!messaging) return; // <-- Cette ligne évite que onMessage plante si messaging est null
+    if (!messaging) return;
     
     const unsubscribe = onMessage(messaging, (payload) => {
       console.log('Foreground FCM message:', payload);
@@ -225,9 +280,11 @@ function App() {
     setNotifLoading(false);
   };
 
-  // ─── Derived state ───────────────────────────────────────────────────────────
+  // ─── Derived state (Calcul d'urgence mis à jour avec la météo) ───────────────
   const thirstyPlants = plants.filter(p => {
-    return addDays(new Date(p.lastWatering), p.frequency) <= new Date();
+    const factor = p.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
+    const dynamicFrequency = Math.max(1, Math.round((p.baseFrequency || p.frequency) * factor));
+    return addDays(new Date(p.lastWatering), dynamicFrequency) <= new Date();
   });
 
   const filteredPlants = plants.filter(plant => {
@@ -383,8 +440,13 @@ function App() {
         <div className="flex justify-between items-start mb-8 relative z-[60]">
           <div>
             <h1 className="font-rounded font-black text-4xl tracking-tight text-left dark:text-white">Ma Jungle</h1>
-            <p className="text-[#8A9A5B] dark:text-jungle-sage font-bold text-sm mt-1 uppercase tracking-widest text-left opacity-80">
+            <p className="text-[#8A9A5B] dark:text-jungle-sage font-bold text-sm mt-1 uppercase tracking-widest text-left opacity-80 flex items-center gap-1.5">
               {plants.length} amie{plants.length > 1 ? 's' : ''} à chérir
+              {weatherFactor !== 1 && (
+                <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-[#8A9A5B]/10 dark:bg-jungle-cream/10 text-[#2A3930] dark:text-jungle-cream font-black lowercase normal-case tracking-normal">
+                  <CloudSun size={12} className="mr-1" /> météo active
+                </span>
+              )}
             </p>
           </div>
 

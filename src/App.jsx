@@ -7,6 +7,8 @@ import { useAuth } from './hooks/useAuth';
 import { ROOMS } from './utils/constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { arrayRemove } from 'firebase/firestore';
+import { getDynamicFrequency, getNextWaterDate, isPlantThirsty, getEffectiveWeatherFactor } from './utils/watering';
+import { getWeatherAdjustmentFactor } from './services/weather';
 
 import { 
   Search, Bell, BellOff, LogOut, Plus, Droplets, 
@@ -20,10 +22,6 @@ import PlantDetails from './components/PlantDetails';
 
 const FAMILY_ID = "NOTRE_JUNGLE_PARTAGEE";
 const VAPID_KEY = 'BJ_ta6RLynMO3OswuqxOqO89PRTfGMKhKAeI2C3WiOBNvCN5P3EwngLbjwuyvsgwgFxtjt6GnXIsr6hfg18FZtw';
-
-// Coordonnées géographiques par défaut pour l'API Météo (ex: Angers)
-const LAT = 47.47;
-const LON = -0.56;
 
 // ─── Notification helpers ──────────────────────────────────────────────────────
 
@@ -108,6 +106,7 @@ function App() {
 
   // ── Weather Factor State ──
   const [weatherFactor, setWeatherFactor] = useState(1);
+  const [weatherLabel, setWeatherLabel] = useState('Normal');
 
   // ── Notifications (Sécurisées pour le mobile) ──
   const [notifPermission, setNotifPermission] = useState(() => {
@@ -125,39 +124,9 @@ function App() {
   // ─── Fetch Weather & Compute Factor ──────────────────────────────────────────
   useEffect(() => {
     async function fetchWeatherMetrics() {
-      try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=temperature_2m_max,relative_humidity_2m_mean,et0_fao_evapotranspiration&timezone=Europe/Paris&forecast_days=3`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Météo indisponible');
-        const data = await res.json();
-
-        // Moyenne des prévisions sur 3 jours pour lisser les tendances
-        const avgMaxTemp = data.daily.temperature_2m_max.reduce((a, b) => a + b, 0) / 3;
-        const avgHumidity = data.daily.relative_humidity_2m_mean.reduce((a, b) => a + b, 0) / 3;
-        const avgEvap = data.daily.et0_fao_evapotranspiration.reduce((a, b) => a + b, 0) / 3;
-
-        let score = 0;
-        if (avgEvap > 4) score += 2;
-        else if (avgEvap > 2.5) score += 1;
-        else if (avgEvap < 1) score -= 1;
-
-        if (avgMaxTemp > 30) score += 1;
-        if (avgMaxTemp < 15) score -= 1;
-
-        if (avgHumidity < 45) score += 1;
-        if (avgHumidity > 75) score -= 1;
-
-        // Conversion en facteur multiplicateur d'intervalle
-        if (score >= 3) setWeatherFactor(0.5);       // Fréquence doublée (Canicule)
-        else if (score === 2) setWeatherFactor(0.75); // Intervalle réduit de 25%
-        else if (score === 1) setWeatherFactor(0.85); // Intervalle réduit de 15%
-        else if (score <= -2) setWeatherFactor(1.4);  // Intervalle augmenté de 40% (Temps lourd/frais)
-        else if (score === -1) setWeatherFactor(1.2); // Intervalle augmenté de 20%
-        else setWeatherFactor(1);                     // Mode nominal
-      } catch (err) {
-        console.error("Échec du calcul météo dynamique. Mode nominal activé (1).", err);
-        setWeatherFactor(1);
-      }
+      const { factor, label } = await getWeatherAdjustmentFactor();
+      setWeatherFactor(factor);
+      setWeatherLabel(label);
     }
     if (user) fetchWeatherMetrics();
   }, [user]);
@@ -190,15 +159,8 @@ function App() {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       
       data.sort((a, b) => {
-        // Si la plante est à l'intérieur, on atténue l'effet météo à hauteur de 30% d'impact seulement
-        const factorA = a.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
-        const factorB = b.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
-
-        const dynamicFreqA = Math.max(1, Math.round((a.baseFrequency || a.frequency) * factorA));
-        const dynamicFreqB = Math.max(1, Math.round((b.baseFrequency || b.frequency) * factorB));
-
-        const nA = addDays(new Date(a.lastWatering), dynamicFreqA);
-        const nB = addDays(new Date(b.lastWatering), dynamicFreqB);
+        const nA = getNextWaterDate(a, weatherFactor);
+        const nB = getNextWaterDate(b, weatherFactor);
         return nA - nB;
       });
       setPlants(data);
@@ -281,11 +243,7 @@ function App() {
   };
 
   // ─── Derived state (Calcul d'urgence mis à jour avec la météo) ───────────────
-  const thirstyPlants = plants.filter(p => {
-    const factor = p.isOutdoor ? weatherFactor : 1 + (weatherFactor - 1) * 0.3;
-    const dynamicFrequency = Math.max(1, Math.round((p.baseFrequency || p.frequency) * factor));
-    return addDays(new Date(p.lastWatering), dynamicFrequency) <= new Date();
-  });
+  const thirstyPlants = plants.filter(p => isPlantThirsty(p, weatherFactor));
 
   const filteredPlants = plants.filter(plant => {
     const matchesRoom = activeRoom === 'all' || plant.room === activeRoom;
@@ -376,6 +334,10 @@ function App() {
 
   if (!user) return <Login />;
 
+  // ─── Empty state helpers ─────────────────────────────────────────────────────
+  const isEmptyJungle = plants.length === 0;
+  const isEmptySearch = plants.length > 0 && filteredPlants.length === 0;
+
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#F9F7F2] dark:bg-jungle-deep font-sans text-[#2A3930] dark:text-jungle-cream transition-colors duration-500 overflow-x-hidden">
@@ -437,110 +399,115 @@ function App() {
       <main className="p-6 max-w-md mx-auto pt-6 pb-32">
 
         {/* ── HEADER ── */}
-        <div className="flex justify-between items-start mb-8 relative z-[60]">
-          <div>
-            <h1 className="font-rounded font-black text-4xl tracking-tight text-left dark:text-white">Ma Jungle</h1>
-            <p className="text-[#8A9A5B] dark:text-jungle-sage font-bold text-sm mt-1 uppercase tracking-widest text-left opacity-80 flex items-center gap-1.5">
-              {plants.length} amie{plants.length > 1 ? 's' : ''} à chérir
+        {!selectedPlant && (
+          <div className="flex justify-between items-start mb-8 relative z-[60]">
+            <div>
+              <h1 className="font-rounded font-black text-4xl tracking-tight text-left dark:text-white">Ma Jungle</h1>
+              <p className="text-[#8A9A5B] dark:text-jungle-sage font-bold text-sm mt-1 uppercase tracking-widest text-left opacity-80">
+                {plants.length} amie{plants.length > 1 ? 's' : ''} à chérir
+              </p>
               {weatherFactor !== 1 && (
-                <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-[#8A9A5B]/10 dark:bg-jungle-cream/10 text-[#2A3930] dark:text-jungle-cream font-black lowercase normal-case tracking-normal">
-                  <CloudSun size={12} className="mr-1" /> météo active
-                </span>
+                <div className="mt-2">
+                  <span className="inline-flex items-center text-[10px] px-2.5 py-1 rounded-full bg-[#8A9A5B]/10 dark:bg-jungle-cream/10 text-[#2A3930] dark:text-jungle-cream font-black lowercase normal-case tracking-normal">
+                    <CloudSun size={12} className="mr-1.5 shrink-0" /> 
+                    {weatherLabel} · {weatherFactor < 1 ? `arrosage +${Math.round((1 - weatherFactor) * 100)}%` : `arrosage -${Math.round((weatherFactor - 1) * 100)}%`}
+                  </span>
+                </div>
               )}
-            </p>
-          </div>
+            </div>
 
-          <div className="relative">
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="p-3 bg-white dark:bg-jungle-green text-jungle-sage dark:text-jungle-cream rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm relative z-[70]"
-            >
-              <Settings size={22} />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-3 bg-white dark:bg-jungle-green text-jungle-sage dark:text-jungle-cream rounded-2xl border border-gray-100 dark:border-white/5 shadow-sm relative z-[70]"
+              >
+                <Settings size={22} />
+              </button>
 
-            <AnimatePresence>
-              {showSettings && (
-                <>
-                  <motion.div
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowSettings(false)}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    className="absolute right-0 top-16 w-64 bg-white dark:bg-jungle-green rounded-[2.2rem] shadow-2xl border border-gray-100 dark:border-white/10 p-3 z-50"
-                  >
-                    <div className="flex flex-col gap-1">
+              <AnimatePresence>
+                {showSettings && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowSettings(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute right-0 top-16 w-64 bg-white dark:bg-jungle-green rounded-[2.2rem] shadow-2xl border border-gray-100 dark:border-white/10 p-3 z-50"
+                    >
+                      <div className="flex flex-col gap-1">
 
-                      {/* Theme selector */}
-                      <p className="text-[9px] font-black text-gray-400 dark:text-jungle-sage uppercase tracking-[0.2em] px-4 pt-2 pb-1 text-left">Apparence</p>
-                      <div className="grid grid-cols-3 gap-1 px-2 pb-2">
-                        {[
-                          { id: 'light', icon: <Sun size={16} />, label: 'Clair' },
-                          { id: 'auto', icon: <Settings size={16} />, label: 'Auto' },
-                          { id: 'dark', icon: <Moon size={16} />, label: 'Sombre' },
-                        ].map((mode) => (
-                          <button
-                            key={mode.id}
-                            onClick={() => setThemeChoice(mode.id)}
-                            className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
-                              themeChoice === mode.id
-                                ? 'bg-[#2A3930] dark:bg-jungle-cream text-white dark:text-jungle-deep shadow-lg'
-                                : 'hover:bg-jungle-cream dark:hover:bg-white/5 text-gray-400'
-                            }`}
-                          >
-                            {mode.icon}
-                            <span className="text-[8px] font-bold uppercase">{mode.label}</span>
-                          </button>
-                        ))}
+                        {/* Theme selector */}
+                        <p className="text-[9px] font-black text-gray-400 dark:text-jungle-sage uppercase tracking-[0.2em] px-4 pt-2 pb-1 text-left">Apparence</p>
+                        <div className="grid grid-cols-3 gap-1 px-2 pb-2">
+                          {[
+                            { id: 'light', icon: <Sun size={16} />, label: 'Clair' },
+                            { id: 'auto', icon: <Settings size={16} />, label: 'Auto' },
+                            { id: 'dark', icon: <Moon size={16} />, label: 'Sombre' },
+                          ].map((mode) => (
+                            <button
+                              key={mode.id}
+                              onClick={() => setThemeChoice(mode.id)}
+                              className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
+                                themeChoice === mode.id
+                                  ? 'bg-[#2A3930] dark:bg-jungle-cream text-white dark:text-jungle-deep shadow-lg'
+                                  : 'hover:bg-jungle-cream dark:hover:bg-white/5 text-gray-400'
+                              }`}
+                            >
+                              {mode.icon}
+                              <span className="text-[8px] font-bold uppercase">{mode.label}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-2" />
+
+                        {/* ── Notification toggle button ── */}
+                        <button
+                          onClick={() => { handleNotificationToggle(); setShowSettings(false); }}
+                          disabled={notifLoading}
+                          className="flex items-center gap-3 p-4 hover:bg-jungle-cream dark:hover:bg-white/5 rounded-2xl transition-colors text-left disabled:opacity-60"
+                        >
+                          <div className={`p-2 rounded-xl transition-colors ${notifButtonColor()}`}>
+                            {notifButtonIcon()}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-widest dark:text-white">
+                              Notifications
+                            </span>
+                            <span className="text-[9px] text-gray-400 dark:text-jungle-sage font-medium mt-0.5">
+                              {notifButtonLabel()}
+                            </span>
+                          </div>
+                          {notifEnabled && notifPermission === 'granted' && (
+                            <div className="ml-auto w-2 h-2 rounded-full bg-green-500 shadow-sm shadow-green-500/50" />
+                          )}
+                        </button>
+
+                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-2" />
+
+                        {/* Sign out */}
+                        <button
+                          onClick={() => auth.signOut()}
+                          className="flex items-center gap-3 p-4 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-colors text-left text-[#BF6B4E]"
+                        >
+                          <div className="p-2 bg-red-50 dark:bg-red-500/10 rounded-xl">
+                            <LogOut size={18} />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest">Déconnexion</span>
+                        </button>
+
                       </div>
-
-                      <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-2" />
-
-                      {/* ── Notification toggle button ── */}
-                      <button
-                        onClick={() => { handleNotificationToggle(); setShowSettings(false); }}
-                        disabled={notifLoading}
-                        className="flex items-center gap-3 p-4 hover:bg-jungle-cream dark:hover:bg-white/5 rounded-2xl transition-colors text-left disabled:opacity-60"
-                      >
-                        <div className={`p-2 rounded-xl transition-colors ${notifButtonColor()}`}>
-                          {notifButtonIcon()}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black uppercase tracking-widest dark:text-white">
-                            Notifications
-                          </span>
-                          <span className="text-[9px] text-gray-400 dark:text-jungle-sage font-medium mt-0.5">
-                            {notifButtonLabel()}
-                          </span>
-                        </div>
-                        {notifEnabled && notifPermission === 'granted' && (
-                          <div className="ml-auto w-2 h-2 rounded-full bg-green-500 shadow-sm shadow-green-500/50" />
-                        )}
-                      </button>
-
-                      <div className="h-px bg-gray-100 dark:bg-white/5 my-1 mx-2" />
-
-                      {/* Sign out */}
-                      <button
-                        onClick={() => auth.signOut()}
-                        className="flex items-center gap-3 p-4 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-colors text-left text-[#BF6B4E]"
-                      >
-                        <div className="p-2 bg-red-50 dark:bg-red-500/10 rounded-xl">
-                          <LogOut size={18} />
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-widest">Déconnexion</span>
-                      </button>
-
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── MISSION ARROSAGE ── */}
         <AnimatePresence>
@@ -647,60 +614,135 @@ function App() {
         </AnimatePresence>
 
         {/* ── FILTERS & SEARCH ── */}
-        <div className="sticky top-4 z-40 space-y-4 mb-8">
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-            <input
-              type="text" placeholder="Chercher une plante..." value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full p-4 pl-12 rounded-[1.5rem] bg-white dark:bg-jungle-green dark:text-white shadow-sm outline-none text-sm focus:ring-2 focus:ring-[#8A9A5B]/20 transition-all"
-            />
-          </div>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-            <button
-              onClick={() => setActiveRoom('all')}
-              className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeRoom === 'all' ? 'bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white shadow-lg' : 'bg-white dark:bg-jungle-green text-gray-400'}`}
-            >
-              Tout
-            </button>
-            {ROOMS.map(room => (
+        {!isEmptyJungle && (
+          <div className="sticky top-4 z-40 space-y-4 mb-8">
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+              <input
+                type="text" placeholder="Chercher une plante..." value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full p-4 pl-12 rounded-[1.5rem] bg-white dark:bg-jungle-green dark:text-white shadow-sm outline-none text-sm focus:ring-2 focus:ring-[#8A9A5B]/20 transition-all"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
               <button
-                key={room.id} onClick={() => setActiveRoom(room.id)}
-                className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeRoom === room.id ? 'bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white shadow-lg' : 'bg-white dark:bg-jungle-green text-gray-400'}`}
+                onClick={() => setActiveRoom('all')}
+                className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeRoom === 'all' ? 'bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white shadow-lg' : 'bg-white dark:bg-jungle-green text-gray-400'}`}
               >
-                {room.label}
+                Tout
               </button>
-            ))}
+              {ROOMS.map(room => (
+                <button
+                  key={room.id} onClick={() => setActiveRoom(room.id)}
+                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeRoom === room.id ? 'bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white shadow-lg' : 'bg-white dark:bg-jungle-green text-gray-400'}`}
+                >
+                  {room.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── PLANT LIST ── */}
-        <motion.div layout className="grid grid-cols-1 gap-8">
-          {filteredPlants.map(plant => (
-            <motion.div
-              layout key={plant.id}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              onClick={() => setSelectedPlant(plant)}
-              className="cursor-pointer"
+        {isEmptyJungle ? (
+          /* Empty state — aucune plante */
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center justify-center text-center pt-16 pb-8 px-4"
+          >
+            {/* Illustration SVG */}
+            <div className="relative mb-8">
+              <div className="w-40 h-40 rounded-full bg-[#8A9A5B]/10 dark:bg-[#8A9A5B]/20 flex items-center justify-center">
+                <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-24 h-24">
+                  {/* Pot */}
+                  <path d="M38 90 L44 72 L76 72 L82 90 Z" fill="#BF6B4E" opacity="0.7" />
+                  <rect x="36" y="68" width="48" height="6" rx="3" fill="#BF6B4E" opacity="0.9" />
+                  {/* Stem */}
+                  <path d="M60 68 C60 68 60 50 60 40" stroke="#8A9A5B" strokeWidth="3" strokeLinecap="round" />
+                  {/* Left leaf */}
+                  <path d="M60 52 C60 52 42 46 38 32 C48 30 62 40 60 52Z" fill="#8A9A5B" opacity="0.8" />
+                  {/* Right leaf */}
+                  <path d="M60 44 C60 44 78 38 82 24 C72 22 58 32 60 44Z" fill="#2A3930" opacity="0.6" />
+                  {/* Small top leaf */}
+                  <path d="M60 40 C60 40 52 28 56 18 C64 20 66 34 60 40Z" fill="#8A9A5B" opacity="0.9" />
+                  {/* Droplets */}
+                  <circle cx="92" cy="38" r="3" fill="#60a5fa" opacity="0.6" />
+                  <circle cx="86" cy="52" r="2" fill="#60a5fa" opacity="0.4" />
+                  <circle cx="96" cy="54" r="1.5" fill="#60a5fa" opacity="0.5" />
+                </svg>
+              </div>
+              {/* Animated ping */}
+              <div className="absolute top-2 right-2 w-4 h-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8A9A5B] opacity-30" />
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-[#8A9A5B]/40" />
+              </div>
+            </div>
+
+            <h2 className="font-rounded font-black text-2xl text-[#2A3930] dark:text-white mb-3">
+              Ta jungle t'attend 🌱
+            </h2>
+            <p className="text-sm text-gray-400 dark:text-gray-500 font-medium leading-relaxed max-w-[240px] mb-8">
+              Ajoute ta première plante pour commencer à suivre ses arrosages.
+            </p>
+
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowAdd(true)}
+              className="bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white px-8 py-4 rounded-[2rem] text-[10px] uppercase tracking-[0.25em] font-black flex items-center gap-3 shadow-xl shadow-[#2A3930]/20"
             >
-              <PlantCard plant={plant} onWater={() => handleWatering(plant.id, plant.name)} onEdit={setEditingPlant} />
-            </motion.div>
-          ))}
-        </motion.div>
+              <Plus size={18} strokeWidth={4} /> Ajouter une plante
+            </motion.button>
+          </motion.div>
+        ) : isEmptySearch ? (
+          /* Empty state — recherche sans résultat */
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-col items-center justify-center text-center pt-12 pb-8 px-4"
+          >
+            <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-jungle-green flex items-center justify-center mb-5 text-gray-300 dark:text-white/20">
+              <Search size={28} />
+            </div>
+            <p className="font-rounded font-black text-lg text-[#2A3930] dark:text-white mb-1">
+              Aucune plante trouvée
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 font-medium">
+              Essaie un autre nom ou filtre.
+            </p>
+          </motion.div>
+        ) : (
+          /* Liste normale */
+          <motion.div layout className="grid grid-cols-1 gap-8">
+            {filteredPlants.map(plant => (
+              <motion.div
+                layout key={plant.id}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                onClick={() => setSelectedPlant(plant)}
+                className="cursor-pointer"
+              >
+                <PlantCard plant={plant} weatherFactor={weatherFactor} onWater={() => handleWatering(plant.id, plant.name)} onEdit={setEditingPlant} />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
 
         {/* ── FAB ── */}
-        <div className="fixed bottom-8 left-0 right-0 flex justify-center z-50 pointer-events-none">
-          <motion.button
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => setShowAdd(true)}
-            className="bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white px-8 py-5 rounded-[2.2rem] text-[10px] uppercase tracking-[0.25em] font-black flex items-center gap-3 shadow-2xl pointer-events-auto border border-white/10"
-          >
-            <Plus size={18} strokeWidth={4} /> Ajouter
-          </motion.button>
-        </div>
+        {!isEmptyJungle && (
+          <div className="fixed bottom-8 left-0 right-0 flex justify-center z-50 pointer-events-none">
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              onClick={() => setShowAdd(true)}
+              className="bg-[#2A3930] dark:bg-jungle-cream dark:text-jungle-deep text-white px-8 py-5 rounded-[2.2rem] text-[10px] uppercase tracking-[0.25em] font-black flex items-center gap-3 shadow-2xl pointer-events-auto border border-white/10"
+            >
+              <Plus size={18} strokeWidth={4} /> Ajouter
+            </motion.button>
+          </div>
+        )}
 
         {/* ── MODALS ── */}
-        {selectedPlant && <PlantDetails plant={selectedPlant} onClose={() => setSelectedPlant(null)} onEdit={setEditingPlant} />}
+        {selectedPlant && <PlantDetails plant={selectedPlant} weatherFactor={weatherFactor} onClose={() => setSelectedPlant(null)} onEdit={setEditingPlant} />}
         {showAdd && <AddPlant onSave={() => { setShowAdd(false); showToast('Amie ajoutée !'); }} onCancel={() => setShowAdd(false)} />}
         {editingPlant && <AddPlant editPlant={editingPlant} onSave={() => { setEditingPlant(null); showToast('Modifiée !', 'info'); }} onCancel={() => setEditingPlant(null)} />}
 

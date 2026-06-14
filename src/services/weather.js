@@ -34,18 +34,15 @@ export async function getWeatherAdjustmentFactor() {
     if (avgHumidity < 45) score += 1;
     if (avgHumidity > 75) score -= 1;
 
-    // Traduction du score en facteur multiplicateur pour l'intervalle de jours
-    // Score positif = Il fait chaud/sec -> l'intervalle diminue (ex: de 8 jours à 5 jours)
-    // Score négatif = Il fait froid/humide -> l'intervalle augmente (ex: de 8 jours à 11 jours)
-    if (score >= 3) return 0.5;       // Moitié de temps en moins (Canicule)
-    if (score === 2) return 0.75;      // -25% de temps en moins
-    if (score === 1) return 0.85;      // -15% de temps en moins
-    if (score <= -2) return 1.4;       // +40% de temps en plus (Froid/Pluie)
-    if (score === -1) return 1.2;      // +20% de temps en plus
-    
-    return 1; // Conditions normales
+    if (score >= 3) return { factor: 0.5, label: 'Canicule' };
+    if (score === 2) return { factor: 0.75, label: 'Forte chaleur' };
+    if (score === 1) return { factor: 0.85, label: 'Temps sec' };
+    if (score <= -2) return { factor: 1.4, label: 'Pluie / Frais' };
+    if (score === -1) return { factor: 1.2, label: 'Temps humide' };
+
+    return { factor: 1, label: 'Normal' };
   } catch (error) {
     console.error("Impossible de calculer l'ajustement météo, retour au mode nominal :", error);
-    return 1; 
+    return { factor: 1, label: 'Normal' };
   }
 }

@@ -3,7 +3,7 @@ import { db, storage, auth } from '../services/firebase';
 import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ROOMS, SPOTS } from '../utils/constants';
-import { X, Camera, Loader2, Sprout, MapPin, Home, Droplets, Bath, ShowerHead, CalendarClock, Quote, Calendar } from 'lucide-react';
+import { X, Camera, Loader2, Sprout, MapPin, Home, Droplets, Bath, ShowerHead, CalendarClock, Quote, Calendar, TreePine } from 'lucide-react';
 
 const FAMILY_ID = "NOTRE_JUNGLE_PARTAGEE";
 
@@ -16,11 +16,12 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
     room: 'salon',
     spot: 'Sol',
     frequency: 7,
+    isOutdoor: false,
     waterType: 'douche',
     waterAmount: 3,
     imageUrl: '',
     lastWatering: new Date().toISOString().split('T')[0]
-  });
+});
   const [imageFile, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
 
@@ -33,6 +34,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
         room: editPlant.room,
         spot: editPlant.spot,
         frequency: editPlant.frequency,
+        isOutdoor: editPlant.isOutdoor || false,
         waterType: editPlant.waterType || 'douche',
         waterAmount: editPlant.waterAmount || 3,
         imageUrl: editPlant.imageUrl,
@@ -40,7 +42,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
       });
       setPreviewUrl(editPlant.imageUrl);
     }
-  }, [editPlant]);
+}, [editPlant]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -63,24 +65,29 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
         room: formData.room,
         spot: formData.spot,
         frequency: formData.frequency,
+        isOutdoor: formData.isOutdoor,
         waterType: formData.waterType,
         waterAmount: formData.waterAmount,
         imageUrl: finalImageUrl,
         lastWatering: selectedDate.toISOString(),
         updatedAt: new Date().toISOString(),
         familyId: FAMILY_ID 
-      };
+};
 
       if (editPlant && editPlant.id) {
-        await updateDoc(doc(db, "plants", editPlant.id), plantData);
-      } else {
+        await updateDoc(doc(db, "plants", editPlant.id), {
+          ...plantData,
+          baseFrequency: formData.frequency,
+        });
+} else {
         await addDoc(collection(db, "plants"), {
           ...plantData,
+          baseFrequency: formData.frequency,
           userId: auth.currentUser.uid,
           createdAt: new Date().toISOString(),
           history: [selectedDate.toISOString()]
         });
-      }
+}
       onSave();
     } catch (error) {
       console.error("Erreur sauvegarde :", error);
@@ -202,6 +209,26 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
               <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">jours</span>
             </div>
           </div>
+
+          {/* EXTÉRIEUR / INTÉRIEUR */}
+<div className="bg-white dark:bg-jungle-green p-4 rounded-2xl shadow-sm flex items-center justify-between border border-transparent dark:border-white/5">
+    <div className="flex items-center gap-3 min-w-0">
+      <div className="bg-[#F9F7F2] dark:bg-jungle-deep p-2 rounded-xl text-[#BF6B4E] shrink-0">
+        <TreePine size={18} />
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] font-black text-[#2A3930] dark:text-white/70 uppercase tracking-widest">Extérieur</span>
+        <span className="text-[9px] text-gray-400 dark:text-gray-500 font-medium">Pleinement exposée à la météo</span>
+      </div>
+    </div>
+    <button
+      type="button"
+      onClick={() => setFormData({...formData, isOutdoor: !formData.isOutdoor})}
+      className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${formData.isOutdoor ? 'bg-[#BF6B4E]' : 'bg-gray-200 dark:bg-jungle-deep'}`}
+    >
+      <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-md transition-transform ${formData.isOutdoor ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+</div>
 
           {/* TYPE D'EAU */}
           <div className="flex bg-white dark:bg-jungle-green p-1 rounded-2xl shadow-sm gap-1 border border-transparent dark:border-white/5">

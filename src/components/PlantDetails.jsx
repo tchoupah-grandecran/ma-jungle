@@ -4,13 +4,13 @@ import { doc, updateDoc, arrayUnion, onSnapshot, deleteDoc } from 'firebase/fire
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { NOTE_TYPES, ROOMS } from '../utils/constants';
-import { getNextWaterDate, getDynamicFrequency } from '../utils/watering';
+import { getNextWaterDate, getDynamicFrequency, isPlantThirsty } from '../utils/watering';
 import { ChevronLeft, Calendar, Plus, MapPin, Droplets, Trash2, Quote, AlertTriangle, Edit2, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MAX_NOTE_LENGTH = 280;
 
-export default function PlantDetails({ plant, weatherFactor, onClose, onEdit }) {
+export default function PlantDetails({ plant, weatherProfile, onClose, onEdit }) {
   const [note, setNote] = useState('');
   const [noteType, setNoteType] = useState('growth');
   const [history, setHistory] = useState(plant.history || []);
@@ -24,14 +24,16 @@ export default function PlantDetails({ plant, weatherFactor, onClose, onEdit }) 
       if (snap.exists()) {
         setHistory(snap.data().history || []);
         setNotes(snap.data().notes || []);
+      } else {
+        onClose();
       }
     });
     return unsub;
-  }, [plant.id]);
+  }, [plant.id, onClose]);
 
-  const nextWaterDate = getNextWaterDate(plant, weatherFactor);
-  const isThirsty = nextWaterDate <= new Date();
-  const dynamicFrequency = getDynamicFrequency(plant, weatherFactor);
+  const nextWaterDate = getNextWaterDate(plant, weatherProfile);
+  const isThirsty = isPlantThirsty(plant, weatherProfile);
+  const dynamicFrequency = getDynamicFrequency(plant, weatherProfile);
   const baseFrequency = plant.baseFrequency ?? plant.frequency;
 
   const addNote = async (e) => {
@@ -128,7 +130,7 @@ export default function PlantDetails({ plant, weatherFactor, onClose, onEdit }) 
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {/* Photo & Badges */}
         <div className="h-80 w-full relative">
-          <img src={plant.imageUrl} className="w-full h-full object-cover shadow-inner dark:brightness-75" alt="" />
+          <img src={plant.imageUrl} className="w-full h-full object-cover shadow-inner" alt={plant.name} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
           <div className="absolute bottom-6 left-6 right-6 flex flex-wrap gap-2">
             <span className="bg-white/95 dark:bg-jungle-green/95 backdrop-blur px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg flex items-center gap-2 text-[#2A3930] dark:text-jungle-cream">

@@ -1,4 +1,15 @@
-{"name":"Ma Jungle","short_name":"Jungle","description":"Suivi d arrosage pour nos plantes","start_url":"/","display":"standalone","background_color":"#F9F6F0","theme_color":"#F9F6F0","lang":"fr","scope":"/","icons": [
+{
+  "name": "Ma Jungle",
+  "short_name": "Jungle",
+  "description": "Suivi d’arrosage pour nos plantes",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F9F6F0",
+  "theme_color": "#F9F6F0",
+  "lang": "fr",
+  "icons": [
     {
       "src": "/logo192-mj.png",
       "sizes": "192x192",
@@ -9,4 +20,5 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]}
+  ]
+}

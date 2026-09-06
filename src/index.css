@@ -41,12 +41,11 @@ h1, .font-rounded {
 
 @layer base {
   img {
-    dynamic-range-limit: standard;
-    transition: filter 0.5s ease;
+    filter: none;
   }
-  /* Les images sont un peu moins éclatantes en mode sombre pour ne pas brûler la rétine */
+
   .dark img {
-    filter: brightness(0.8) contrast(1.1);
+    filter: none;
   }
 }
 

@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react';
-import { db, auth, messaging } from './services/firebase';
-import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, setDoc } from 'firebase/firestore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { db, auth, getMessagingService } from './services/firebase';
+import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, setDoc } from 'firebase/firestore';
 import { getToken, onMessage, deleteToken } from 'firebase/messaging';
-import { addDays } from 'date-fns';
 import { useAuth } from './hooks/useAuth';
 import { ROOMS } from './utils/constants';
 import { motion, AnimatePresence } from 'framer-motion';
-import { arrayRemove } from 'firebase/firestore';
-import { getDynamicFrequency, getNextWaterDate, isPlantThirsty, getEffectiveWeatherFactor } from './utils/watering';
+import { getNextWaterDate, isPlantThirsty } from './utils/watering';
 import { getWeatherAdjustmentFactor } from './services/weather';
 
 import { 
@@ -22,19 +20,51 @@ import PlantDetails from './components/PlantDetails';
 
 const FAMILY_ID = "NOTRE_JUNGLE_PARTAGEE";
 const VAPID_KEY = 'BJ_ta6RLynMO3OswuqxOqO89PRTfGMKhKAeI2C3WiOBNvCN5P3EwngLbjwuyvsgwgFxtjt6GnXIsr6hfg18FZtw';
+const FCM_SERVICE_WORKER_SCOPE = '/firebase-cloud-messaging-push-scope/';
 
 // ─── Notification helpers ──────────────────────────────────────────────────────
 
+async function getFCMServiceWorkerRegistration() {
+  let registration = await navigator.serviceWorker.getRegistration(
+    FCM_SERVICE_WORKER_SCOPE,
+  );
+
+  if (!registration) {
+    registration = await navigator.serviceWorker.register(
+      '/firebase-messaging-sw.js',
+      { scope: FCM_SERVICE_WORKER_SCOPE },
+    );
+  }
+
+  if (registration.active) return registration;
+
+  const worker = registration.installing ?? registration.waiting;
+
+  if (!worker) {
+    throw new Error('Service worker de notifications indisponible');
+  }
+
+  await new Promise((resolve, reject) => {
+    const handleStateChange = () => {
+      if (worker.state === 'activated') resolve();
+      if (worker.state === 'redundant') {
+        reject(new Error('Activation du service worker interrompue'));
+      }
+    };
+
+    worker.addEventListener('statechange', handleStateChange);
+    handleStateChange();
+  });
+
+  return registration;
+}
+
 async function registerFCMToken(uid) {
-  let registration = await navigator.serviceWorker.getRegistration();
-  
-  if (!registration) {
-    registration = await navigator.serviceWorker.ready;
-  }
-  
-  if (!registration) {
-    throw new Error('Service worker introuvable après vérification');
-  }
+  const messaging = await getMessagingService();
+
+  if (!messaging) throw new Error('Notifications non supportées');
+
+  const registration = await getFCMServiceWorkerRegistration();
 
   const token = await getToken(messaging, {
     vapidKey: VAPID_KEY,
@@ -47,22 +77,36 @@ async function registerFCMToken(uid) {
 
   await setDoc(
     doc(db, 'users', uid), 
-    { fcmTokens: arrayUnion(token) }, 
+    {
+      familyId: FAMILY_ID,
+      fcmTokens: arrayUnion(token),
+      tokensUpdatedAt: new Date().toISOString(),
+    },
     { merge: true }
   );
   return token;
 }
 
 async function unregisterFCMToken(uid) {
-  try { 
-    const registration = await navigator.serviceWorker.getRegistration();
-    const token = await getToken(messaging, { serviceWorkerRegistration: registration });
-    
-    if (token) {
-      await setDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(token) }, { merge: true });
-    }
-    await deleteToken(messaging); 
-  } catch (_) { /* ignore */ }
+  const messaging = await getMessagingService();
+
+  if (!messaging) return;
+
+  const registration = await getFCMServiceWorkerRegistration();
+  const token = await getToken(messaging, {
+    vapidKey: VAPID_KEY,
+    serviceWorkerRegistration: registration,
+  });
+
+  if (token) {
+    await setDoc(
+      doc(db, 'users', uid),
+      { fcmTokens: arrayRemove(token) },
+      { merge: true },
+    );
+  }
+
+  await deleteToken(messaging);
 }
 
 // ─── App ───────────────────────────────────────────────────────────────────────
@@ -71,19 +115,14 @@ function App() {
   const { user, loading } = useAuth();
 
   // ── Mode PWA / Standalone Installation ──
-  const [isStandalone, setIsStandalone] = useState(true);
-
-  useEffect(() => {
+  const [isStandalone] = useState(() => {
     const isInWebAppStandalone = window.matchMedia('(display-mode: standalone)').matches 
       || window.navigator.standalone 
       || false;
-    
     const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-    if (isMobileDevice && !isInWebAppStandalone) {
-      setIsStandalone(false);
-    }
-  }, []);
+    return !isMobileDevice || isInWebAppStandalone;
+  });
 
   // ── Theme ──
   const [themeChoice, setThemeChoice] = useState(() => {
@@ -98,15 +137,25 @@ function App() {
   const [showConfirmWaterAll, setShowConfirmWaterAll] = useState(false);
   const [isMissionExpanded, setIsMissionExpanded] = useState(false);
   const [toast, setToast] = useState(null);
+  const closeSelectedPlant = useCallback(
+    () => setSelectedPlant(null),
+    [],
+  );
 
   // ── Data ──
   const [plants, setPlants] = useState([]);
   const [activeRoom, setActiveRoom] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ── Weather Factor State ──
-  const [weatherFactor, setWeatherFactor] = useState(1);
-  const [weatherLabel, setWeatherLabel] = useState('Normal');
+  // ── Weather state ──
+  const [weatherProfile, setWeatherProfile] = useState({
+    factor: 1,
+    label: 'Normal',
+    significantRainDays: [],
+  });
+
+  const weatherFactor = weatherProfile.factor;
+  const weatherLabel = weatherProfile.label;
 
   // ── Notifications (Sécurisées pour le mobile) ──
   const [notifPermission, setNotifPermission] = useState(() => {
@@ -123,12 +172,68 @@ function App() {
 
   // ─── Fetch Weather & Compute Factor ──────────────────────────────────────────
   useEffect(() => {
-    async function fetchWeatherMetrics() {
-      const { factor, label } = await getWeatherAdjustmentFactor();
-      setWeatherFactor(factor);
-      setWeatherLabel(label);
+    if (!user) {
+      return undefined;
     }
-    if (user) fetchWeatherMetrics();
+
+    let isActive = true;
+    let midnightTimer;
+    let refreshPromise = null;
+
+    async function refreshWeather() {
+      if (refreshPromise) return refreshPromise;
+
+      refreshPromise = getWeatherAdjustmentFactor()
+        .then((profile) => {
+          if (isActive) setWeatherProfile(profile);
+        })
+        .catch((error) => {
+          // On conserve le dernier profil valide lors d'une panne réseau.
+          console.error('Actualisation météo impossible :', error);
+        })
+        .finally(() => {
+          refreshPromise = null;
+        });
+
+      return refreshPromise;
+    }
+
+    function scheduleNextDailyRefresh() {
+      const now = new Date();
+      const nextRefresh = new Date(now);
+      nextRefresh.setDate(now.getDate() + 1);
+      nextRefresh.setHours(0, 5, 0, 0);
+
+      midnightTimer = window.setTimeout(async () => {
+        await refreshWeather();
+        if (isActive) scheduleNextDailyRefresh();
+      }, nextRefresh.getTime() - now.getTime());
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        refreshWeather();
+      }
+    }
+
+    refreshWeather();
+    scheduleNextDailyRefresh();
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibilityChange,
+    );
+    window.addEventListener('online', refreshWeather);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(midnightTimer);
+      document.removeEventListener(
+        'visibilitychange',
+        handleVisibilityChange,
+      );
+      window.removeEventListener('online', refreshWeather);
+    };
   }, [user]);
 
   // ─── Theme effect ────────────────────────────────────────────────────────────
@@ -156,17 +261,10 @@ function App() {
     if (!user) return;
     const q = query(collection(db, 'plants'), where('familyId', '==', FAMILY_ID));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      data.sort((a, b) => {
-        const nA = getNextWaterDate(a, weatherFactor);
-        const nB = getNextWaterDate(b, weatherFactor);
-        return nA - nB;
-      });
-      setPlants(data);
+      setPlants(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return unsubscribe;
-  }, [user, weatherFactor]);
+  }, [user]);
 
   // ─── Toast auto-dismiss ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -177,16 +275,24 @@ function App() {
 
   // ─── FCM foreground messages ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!messaging) return;
-    
-    const unsubscribe = onMessage(messaging, (payload) => {
-      console.log('Foreground FCM message:', payload);
-      showToast(
-        `${payload.notification?.title ?? 'Notification'}: ${payload.notification?.body ?? ''}`,
-        'info'
-      );
+    let isActive = true;
+    let unsubscribe;
+
+    getMessagingService().then((messaging) => {
+      if (!isActive || !messaging) return;
+
+      unsubscribe = onMessage(messaging, (payload) => {
+        showToast(
+          `${payload.notification?.title ?? 'Notification'}: ${payload.notification?.body ?? ''}`,
+          'info'
+        );
+      });
     });
-    return () => unsubscribe();
+
+    return () => {
+      isActive = false;
+      unsubscribe?.();
+    };
   }, []);
 
   // ─── Silently refresh token on load if notifications already enabled ─────────
@@ -195,7 +301,7 @@ function App() {
     registerFCMToken(user.uid).catch(err => {
       console.error('Silent token refresh failed:', err);
     });
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, notifEnabled]);
 
   // ─── Notification toggle ─────────────────────────────────────────────────────
   const handleNotificationToggle = async () => {
@@ -242,14 +348,58 @@ function App() {
     setNotifLoading(false);
   };
 
-  // ─── Derived state (Calcul d'urgence mis à jour avec la météo) ───────────────
-  const thirstyPlants = plants.filter(p => isPlantThirsty(p, weatherFactor));
+  const handleSignOut = async () => {
+    if (
+      user &&
+      notifEnabled &&
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted'
+    ) {
+      try {
+        await unregisterFCMToken(user.uid);
+      } catch (error) {
+        console.error(
+          'Le token de notification n’a pas pu être retiré :',
+          error,
+        );
+      }
+    }
 
-  const filteredPlants = plants.filter(plant => {
+    setNotifEnabled(false);
+    localStorage.setItem('notif-enabled', 'false');
+    await auth.signOut();
+  };
+
+  // ─── Derived state (Calcul d'urgence mis à jour avec la météo) ───────────────
+  const sortedPlants = useMemo(
+    () => [...plants].sort((firstPlant, secondPlant) => {
+      const firstDate = getNextWaterDate(
+        firstPlant,
+        weatherProfile,
+      );
+      const secondDate = getNextWaterDate(
+        secondPlant,
+        weatherProfile,
+      );
+
+      return firstDate - secondDate;
+    }),
+    [plants, weatherProfile],
+  );
+
+  const thirstyPlants = sortedPlants.filter((plant) =>
+    isPlantThirsty(plant, weatherProfile),
+  );
+
+  const filteredPlants = sortedPlants.filter(plant => {
     const matchesRoom = activeRoom === 'all' || plant.room === activeRoom;
     const matchesSearch = (plant.name || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchesRoom && matchesSearch;
   });
+
+  const currentSelectedPlant = selectedPlant
+    ? plants.find((plant) => plant.id === selectedPlant.id) ?? selectedPlant
+    : null;
 
   // ─── Watering handlers ───────────────────────────────────────────────────────
   const handleWatering = async (id, name) => {
@@ -260,15 +410,34 @@ function App() {
         history: arrayUnion(now),
       });
       if (name) showToast(`${name} a bien été arrosée ! 🌿`);
-    } catch (err) { console.error(err); }
+      return true;
+    } catch (error) {
+      console.error(error);
+      if (name) showToast(`Impossible d’arroser ${name}.`, 'error');
+      return false;
+    }
   };
 
   const waterAllThirsty = async () => {
-    const count = thirstyPlants.length;
-    await Promise.all(thirstyPlants.map(p => handleWatering(p.id)));
+    const results = await Promise.all(
+      thirstyPlants.map((plant) => handleWatering(plant.id)),
+    );
+    const successCount = results.filter(Boolean).length;
+    const failureCount = results.length - successCount;
+
     setShowConfirmWaterAll(false);
     setIsMissionExpanded(false);
-    showToast(`${count} plantes arrosées ! ✨`);
+
+    if (failureCount === 0) {
+      showToast(`${successCount} plantes arrosées ! ✨`);
+    } else if (successCount === 0) {
+      showToast('Aucune plante n’a pu être arrosée.', 'error');
+    } else {
+      showToast(
+        `${successCount} arrosée(s), ${failureCount} échec(s).`,
+        'error',
+      );
+    }
   };
 
   // ─── Notification button label/icon helpers ──────────────────────────────────
@@ -491,7 +660,7 @@ function App() {
 
                         {/* Sign out */}
                         <button
-                          onClick={() => auth.signOut()}
+                          onClick={handleSignOut}
                           className="flex items-center gap-3 p-4 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-colors text-left text-[#BF6B4E]"
                         >
                           <div className="p-2 bg-red-50 dark:bg-red-500/10 rounded-xl">
@@ -717,12 +886,18 @@ function App() {
           <motion.div layout className="grid grid-cols-1 gap-8">
             {filteredPlants.map(plant => (
               <motion.div
-                layout key={plant.id}
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                layout
+                key={plant.id}
                 onClick={() => setSelectedPlant(plant)}
                 className="cursor-pointer"
               >
-                <PlantCard plant={plant} weatherFactor={weatherFactor} onWater={() => handleWatering(plant.id, plant.name)} onEdit={setEditingPlant} />
+                <PlantCard
+                  plant={plant}
+                  weatherProfile={weatherProfile}
+                  onWater={() =>
+                    handleWatering(plant.id, plant.name)
+                  }
+                />
               </motion.div>
             ))}
           </motion.div>
@@ -742,7 +917,17 @@ function App() {
         )}
 
         {/* ── MODALS ── */}
-        {selectedPlant && <PlantDetails plant={selectedPlant} weatherFactor={weatherFactor} onClose={() => setSelectedPlant(null)} onEdit={setEditingPlant} />}
+        {currentSelectedPlant && (
+          <PlantDetails
+            plant={currentSelectedPlant}
+            weatherProfile={weatherProfile}
+            onClose={closeSelectedPlant}
+            onEdit={(plant) => {
+              closeSelectedPlant();
+              setEditingPlant(plant);
+            }}
+          />
+        )}
         {showAdd && <AddPlant onSave={() => { setShowAdd(false); showToast('Amie ajoutée !'); }} onCancel={() => setShowAdd(false)} />}
         {editingPlant && <AddPlant editPlant={editingPlant} onSave={() => { setEditingPlant(null); showToast('Modifiée !', 'info'); }} onCancel={() => setEditingPlant(null)} />}
 

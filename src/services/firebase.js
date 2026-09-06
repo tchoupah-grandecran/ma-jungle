@@ -22,19 +22,34 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// ── SÉCURISATION DU MESSAGING ──
-// On crée une variable modifiable. Elle restera à null si le navigateur ne supporte pas FCM.
-export let messaging = null;
+let messagingPromise;
 
-// On teste la compatibilité de manière asynchrone sans bloquer l'export
-isSupported().then((supported) => {
-  if (supported && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-    messaging = getMessaging(app);
-  } else {
-    console.warn("FCM Messaging non supporté sur ce navigateur (attente du mode PWA écran d'accueil).");
+/**
+ * Retourne l'instance FCM une fois la détection de compatibilité terminée.
+ * Une Promise évite la course entre le premier rendu React et isSupported().
+ */
+export function getMessagingService() {
+  if (!messagingPromise) {
+    messagingPromise = (async () => {
+      if (
+        typeof window === 'undefined' ||
+        !('serviceWorker' in navigator) ||
+        !(await isSupported())
+      ) {
+        return null;
+      }
+
+      return getMessaging(app);
+    })().catch((error) => {
+      console.error(
+        'Erreur lors de l’initialisation de Firebase Messaging :',
+        error,
+      );
+      return null;
+    });
   }
-}).catch((err) => {
-  console.error("Erreur lors de la vérification du support de l'API Messaging:", err);
-});
+
+  return messagingPromise;
+}
 
 export default app;

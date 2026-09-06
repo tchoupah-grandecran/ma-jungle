@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { db, storage, auth } from '../services/firebase';
 import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -7,64 +7,106 @@ import { X, Camera, Loader2, Sprout, MapPin, Home, Droplets, Bath, ShowerHead, C
 
 const FAMILY_ID = "NOTRE_JUNGLE_PARTAGEE";
 
+function getLocalDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function createInitialFormData(editPlant) {
+  return {
+    name: editPlant?.name ?? '',
+    variety: editPlant?.variety ?? '',
+    description: editPlant?.description ?? '',
+    room: editPlant?.room ?? 'salon',
+    spot: editPlant?.spot ?? 'Sol',
+    frequency:
+      editPlant?.baseFrequency ?? editPlant?.frequency ?? 7,
+    isOutdoor: editPlant?.isOutdoor ?? false,
+    waterType: editPlant?.waterType ?? 'douche',
+    waterAmount: editPlant?.waterAmount ?? 3,
+    imageUrl: editPlant?.imageUrl ?? '',
+    lastWatering: editPlant?.lastWatering
+      ? getLocalDateInputValue(new Date(editPlant.lastWatering))
+      : getLocalDateInputValue(),
+  };
+}
+
+function parseLocalDate(dateValue) {
+  const [year, month, day] = dateValue
+    .split('-')
+    .map(Number);
+
+  return new Date(year, month - 1, day, 12, 0, 0);
+}
+
 export default function AddPlant({ onSave, onCancel, editPlant }) {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    variety: '',
-    description: '',
-    room: 'salon',
-    spot: 'Sol',
-    frequency: 7,
-    isOutdoor: false,
-    waterType: 'douche',
-    waterAmount: 3,
-    imageUrl: '',
-    lastWatering: new Date().toISOString().split('T')[0]
-});
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState(() =>
+    createInitialFormData(editPlant),
+  );
   const [imageFile, setImageFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewUrl, setPreviewUrl] = useState(
+    editPlant?.imageUrl ?? '',
+  );
 
   useEffect(() => {
-    if (editPlant) {
-      setFormData({
-        name: editPlant.name,
-        variety: editPlant.variety || '',
-        description: editPlant.description || '',
-        room: editPlant.room,
-        spot: editPlant.spot,
-        frequency: editPlant.frequency,
-        isOutdoor: editPlant.isOutdoor || false,
-        waterType: editPlant.waterType || 'douche',
-        waterAmount: editPlant.waterAmount || 3,
-        imageUrl: editPlant.imageUrl,
-        lastWatering: editPlant.lastWatering ? editPlant.lastWatering.split('T')[0] : new Date().toISOString().split('T')[0]
-      });
-      setPreviewUrl(editPlant.imageUrl);
-    }
-}, [editPlant]);
+    if (!previewUrl.startsWith('blob:')) return undefined;
+
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
+    const frequency = Number(formData.frequency);
+
+    if (!auth.currentUser) {
+      setError('Votre session a expiré. Reconnectez-vous.');
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      setError('Donnez un nom à la plante.');
+      return;
+    }
+
+    if (!Number.isInteger(frequency) || frequency < 1 || frequency > 90) {
+      setError('La fréquence doit être comprise entre 1 et 90 jours.');
+      return;
+    }
+
+    if (!imageFile && !formData.imageUrl) {
+      setError('Ajoutez une photo de la plante.');
+      return;
+    }
+
     setLoading(true);
     try {
       let finalImageUrl = formData.imageUrl;
       if (imageFile) {
-        const storageRef = ref(storage, `plants/${auth.currentUser.uid}/${Date.now()}_${imageFile.name}`);
+        const safeFileName = imageFile.name.replace(
+          /[^a-zA-Z0-9._-]/g,
+          '_',
+        );
+        const storageRef = ref(storage, `plants/${auth.currentUser.uid}/${Date.now()}_${safeFileName}`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         finalImageUrl = await getDownloadURL(snapshot.ref);
       }
 
-      const selectedDate = new Date(formData.lastWatering);
-      selectedDate.setHours(12, 0, 0);
+      const selectedDate = parseLocalDate(formData.lastWatering);
 
       const plantData = {
-        name: formData.name,
+        name: formData.name.trim(),
         variety: formData.variety,
         description: formData.description,
         room: formData.room,
         spot: formData.spot,
-        frequency: formData.frequency,
+        frequency,
         isOutdoor: formData.isOutdoor,
         waterType: formData.waterType,
         waterAmount: formData.waterAmount,
@@ -77,12 +119,12 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
       if (editPlant && editPlant.id) {
         await updateDoc(doc(db, "plants", editPlant.id), {
           ...plantData,
-          baseFrequency: formData.frequency,
+          baseFrequency: frequency,
         });
 } else {
         await addDoc(collection(db, "plants"), {
           ...plantData,
-          baseFrequency: formData.frequency,
+          baseFrequency: frequency,
           userId: auth.currentUser.uid,
           createdAt: new Date().toISOString(),
           history: [selectedDate.toISOString()]
@@ -91,18 +133,21 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
       onSave();
     } catch (error) {
       console.error("Erreur sauvegarde :", error);
+      setError('La plante n’a pas pu être enregistrée. Réessayez.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-[#2A3930]/60 dark:bg-black/70 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4 transition-colors">
+    <div role="dialog" aria-modal="true" aria-labelledby="plant-form-title" className="fixed inset-0 bg-[#2A3930]/60 dark:bg-black/70 backdrop-blur-md z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4 transition-colors">
       <div className="bg-[#F9F7F2] dark:bg-jungle-deep w-full max-w-lg rounded-t-[3rem] sm:rounded-[3.5rem] shadow-2xl overflow-hidden relative flex flex-col max-h-[95vh] transition-colors">
         
         {/* BOUTON FERMER */}
         <button 
+          type="button"
           onClick={onCancel} 
+          aria-label="Fermer"
           className="absolute top-6 right-6 p-2 bg-white/50 dark:bg-jungle-green/50 backdrop-blur-sm hover:bg-white dark:hover:bg-jungle-green rounded-full transition-all z-20"
         >
           <X size={24} className="text-[#2A3930] dark:text-jungle-cream" />
@@ -111,7 +156,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
         <form onSubmit={handleSubmit} className="p-6 sm:p-8 pt-8 overflow-y-auto no-scrollbar space-y-4 text-left min-w-0">
           
           <div className="text-center mb-4">
-             <h2 className="font-rounded text-3xl text-[#2A3930] dark:text-white">
+             <h2 id="plant-form-title" className="font-rounded text-3xl text-[#2A3930] dark:text-white">
                 {editPlant ? 'Modifier' : 'Nouvelle amie'}
              </h2>
           </div>
@@ -137,6 +182,7 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
                       setPreviewUrl(URL.createObjectURL(file)); 
                     }
                   }} 
+                  aria-label="Choisir une photo"
                   className="absolute inset-0 opacity-0 cursor-pointer z-10" 
                 />
               </div>
@@ -202,6 +248,9 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
             <div className="flex items-center gap-2 shrink-0">
               <input 
                 type="number"
+                min="1"
+                max="90"
+                required
                 value={formData.frequency}
                 onChange={e => setFormData({...formData, frequency: parseInt(e.target.value) || ''})}
                 className="w-10 p-2 rounded-xl bg-[#F9F7F2] dark:bg-jungle-deep text-center font-bold text-[#BF6B4E] outline-none text-sm"
@@ -224,6 +273,9 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
     <button
       type="button"
       onClick={() => setFormData({...formData, isOutdoor: !formData.isOutdoor})}
+      role="switch"
+      aria-checked={formData.isOutdoor}
+      aria-label="Plante extérieure"
       className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${formData.isOutdoor ? 'bg-[#BF6B4E]' : 'bg-gray-200 dark:bg-jungle-deep'}`}
     >
       <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-md transition-transform ${formData.isOutdoor ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -280,6 +332,12 @@ export default function AddPlant({ onSave, onCancel, editPlant }) {
           </div>
 
           {/* BOUTON VALIDATION */}
+          {error && (
+            <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-center text-xs font-bold text-red-600 dark:bg-red-500/10 dark:text-red-300">
+              {error}
+            </p>
+          )}
+
           <div className="pt-2 pb-2">
             <button 
               type="submit" 

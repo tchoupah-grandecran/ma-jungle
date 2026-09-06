@@ -1,16 +1,45 @@
-# React + Vite
+# Ma Jungle
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Application React/PWA de suivi d’arrosage, synchronisée avec Firebase et les
+prévisions Open-Meteo d’Angers.
 
-Currently, two official plugins are available:
+## Développement
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+Vérification complète avant livraison :
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm run check
+```
 
-## Expanding the ESLint configuration
+Cette commande contrôle le code du client et des Cloud Functions, exécute les
+tests météo/arrosage puis construit la version de production.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Logique météo
+
+- Les deux jours précédents et les trois jours à venir servent à détecter les
+  épisodes chauds, secs ou humides.
+- L’historique de pluie est conservé sur 92 jours dans le calcul.
+- Une pluie liquide strictement supérieure à 5 mm remplace un arrosage pour
+  les plantes extérieures uniquement.
+- Les plantes extérieures reçoivent 100 % de l’ajustement météo ; les plantes
+  intérieures n’en reçoivent que 30 %.
+- Le profil est recalculé au démarrage, au retour au premier plan, au retour du
+  réseau et chaque jour à 00 h 05.
+
+## Déploiement
+
+Le client et les fonctions doivent être déployés ensemble afin que les rappels
+utilisent le même calcul météo que l’interface :
+
+```bash
+npm run check
+npx firebase-tools deploy --only hosting,functions
+```
+
+Le runtime des fonctions est Node.js 22. Les notifications utilisent un
+service worker dédié à FCM, avec un scope distinct du service worker PWA.
